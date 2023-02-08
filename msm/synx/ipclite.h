@@ -315,6 +315,7 @@ struct ipclite_mem {
 	struct ipcmem_global_partition *global_partition;
 	uint32_t num_partitions;
 	struct ipcmem_partition **partition;
+	bool init_status;
 };
 
 /**

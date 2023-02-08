@@ -695,6 +695,34 @@ static int ipclite_rx_test_data(struct ipclite_channel *channel, size_t avail)
 	return ret;
 }
 
+static int ipclite_init_update(struct ipclite_channel *channel)
+{
+	int ret = 0;
+	uint32_t proc_id = channel->remote_pid;
+
+	if (proc_id >= IPCMEM_NUM_HOSTS) {
+		IPCLITE_OS_LOG(IPCLITE_ERR, "Invalid proc_id %d\n", proc_id);
+		return -EINVAL;
+	}
+
+	if (unlikely(channel->status == INACTIVE)) {
+		IPCLITE_OS_LOG(IPCLITE_ERR, "Cannot Send, Core %d is Inactive\n", proc_id);
+		return -EOPNOTSUPP;
+	}
+
+	ret = mbox_send_message(channel->irq_info[IPCLITE_MEM_INIT_SIGNAL].mbox_chan, NULL);
+	if (ret < 0) {
+		IPCLITE_OS_LOG(IPCLITE_ERR,
+			"init signal send failed to core: %d ret: %d\n", proc_id, ret);
+		return ret;
+	}
+	mbox_client_txdone(channel->irq_info[IPCLITE_MEM_INIT_SIGNAL].mbox_chan, 0);
+
+	IPCLITE_OS_LOG(IPCLITE_DBG,
+		"init signal send completed to core: %d ret: %d\n", proc_id, ret);
+	return ret;
+}
+
 static irqreturn_t ipclite_intr(int irq, void *data)
 {
 	int ret = 0;
@@ -727,6 +755,12 @@ static irqreturn_t ipclite_intr(int irq, void *data)
 		IPCLITE_OS_LOG(IPCLITE_DBG, "checking messages in rx_fifo done\n");
 	} else if (irq_info->signal_id == IPCLITE_VERSION_SIGNAL) {
 		IPCLITE_OS_LOG(IPCLITE_DBG, "Versioning is not enabled using IPCC signals\n");
+	} else if (irq_info->signal_id == IPCLITE_MEM_INIT_SIGNAL) {
+		if (ipclite && ipclite->ipcmem.init_status)
+			ipclite_init_update(channel);
+		else
+			IPCLITE_OS_LOG(IPCLITE_ERR,
+				"ipclite probe failed, can't loop back init signal\n");
 	} else if (irq_info->signal_id == IPCLITE_TEST_SIGNAL) {
 		for (;;) {
 			avail = ipclite_rx_avail(channel);
@@ -1056,6 +1090,7 @@ static int32_t ipcmem_init(struct ipclite_mem *ipcmem, struct device_node *pn)
 	wmb();
 
 	ipcmem->toc->hdr.init_done = IPCMEM_INIT_COMPLETED;
+	ipcmem->init_status = true;
 	IPCLITE_OS_LOG(IPCLITE_DBG, "Ipcmem init completed\n");
 
 	/* Should be called after all Global TOC related init is done */
