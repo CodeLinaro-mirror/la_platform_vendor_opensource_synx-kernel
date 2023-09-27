@@ -10,12 +10,13 @@ ccflags-y += -I$(SYNX_ROOT)/msm/synx/
 
 # ported from Android.mk
 $(info within KBUILD file KBUILD_EXTRA_SYMBOLS = $(KBUILD_EXTRA_SYMBOLS))
-
+CONFIG_IPCLITE = false
 ifeq ($(CONFIG_ARCH_WAIPIO), y)
 $(info within KBUILD file CONFIG_ARCH_WAIPIO = $(CONFIG_ARCH_WAIPIO))
 # include $(SYNX_ROOT)/config/waipio.mk
 KBUILD_CPPFLAGS += -DCONFIG_SYNX_WAIPIO=1
 ccflags-y += -DCONFIG_SYNX_WAIPIO=1
+CONFIG_IPCLITE = true
 endif
 
 ifeq ($(CONFIG_ARCH_KALAMA), y)
@@ -23,6 +24,7 @@ $(info within KBUILD file CONFIG_ARCH_KALAMA = $(CONFIG_ARCH_KALAMA))
 # include $(SYNX_ROOT)/config/waipio.mk
 KBUILD_CPPFLAGS += -DCONFIG_SYNX_KALAMA=1
 ccflags-y += -DCONFIG_SYNX_KALAMA=1
+CONFIG_IPCLITE = true
 endif
 
 ifeq ($(CONFIG_ARCH_PINEAPPLE), y)
@@ -30,9 +32,16 @@ $(info within KBUILD file CONFIG_ARCH_PINEAPPLE = $(CONFIG_ARCH_PINEAPPLE))
 # include $(SYNX_ROOT)/config/pineapple.mk
 KBUILD_CPPFLAGS += -DCONFIG_SYNX_PINEAPPLE=1
 ccflags-y += -DCONFIG_SYNX_PINEAPPLE=1
+CONFIG_IPCLITE = true
 endif
 
 obj-m += synx-driver.o
+ifeq ($(CONFIG_IPCLITE), false)
+obj-m += synx/ipclite_stub.o
+else
 obj-m += synx/ipclite.o
 obj-m += synx/test/ipclite_test.o
+endif
+
+
 synx-driver-objs := synx/synx.o synx/synx_global.o synx/synx_util.o synx/synx_debugfs.o

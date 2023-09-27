@@ -1,11 +1,13 @@
-KBUILD_OPTIONS+= SYNX_ROOT=$(KERNEL_SRC)/$(M)
+SRC := $(shell pwd)
+KBUILD_OPTIONS := SYNX_ROOT=$(SRC)
 
 all:
-	$(MAKE) -C $(KERNEL_SRC) M=$(M) modules $(KBUILD_OPTIONS)
+	$(MAKE) -C $(KERNEL_SRC) M=$(SRC) modules $(KBUILD_OPTIONS)
+
 modules_install:
-	$(MAKE) M=$(M) -C $(KERNEL_SRC) modules_install
+	$(MAKE) M=$(SRC) -C $(KERNEL_SRC) modules_install
 %:
 	$(MAKE) -C $(KERNEL_SRC) M=$(M) $@ $(KBUILD_OPTIONS)
 clean:
-	rm -f *.o *.ko *.mod.c *.mod.o *~ .*.cmd Module.symvers
-	rm -rf .tmp_versions
+	$(MAKE) -C $(KERNEL_SRC) M=$(SRC) clean
+
