@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/atomic.h>
@@ -1176,6 +1176,12 @@ int synx_merge(struct synx_session *session,
 	if (IS_ERR_OR_NULL(client))
 		return -SYNX_INVALID;
 
+	synx_obj = kzalloc(sizeof(*synx_obj), GFP_KERNEL);
+	if (IS_ERR_OR_NULL(synx_obj)) {
+		rc = -SYNX_NOMEM;
+		goto fail;
+	}
+
 	rc = synx_util_validate_merge(client, params->h_synxs,
 			params->num_objs, &fences, &count);
 	if (rc < 0) {
@@ -1183,12 +1189,8 @@ int synx_merge(struct synx_session *session,
 			"[sess :%llu] merge validation failed\n",
 			client->id);
 		rc = -SYNX_INVALID;
-		goto fail;
-	}
 
-	synx_obj = kzalloc(sizeof(*synx_obj), GFP_KERNEL);
-	if (IS_ERR_OR_NULL(synx_obj)) {
-		rc = -SYNX_NOMEM;
+		kfree(synx_obj);
 		goto fail;
 	}
 
@@ -1205,12 +1207,20 @@ int synx_merge(struct synx_session *session,
 					*params->h_merged_obj, 0);
 	if (IS_ERR_OR_NULL(map_entry)) {
 		rc = PTR_ERR(map_entry);
-		goto clean_up;
+
+		/*
+		 * dma fence put will take care of removing the references taken
+		 * on child fences
+		 */
+		dma_fence_put(synx_obj->fence);
+		kfree(synx_obj);
+		goto fail;
 	}
 
 	rc = synx_util_add_callback(synx_obj, *params->h_merged_obj);
+
 	if (rc != SYNX_SUCCESS)
-		goto clear;
+		goto clean_up;
 
 	rc = synx_util_init_handle(client, synx_obj,
 			params->h_merged_obj, map_entry);
@@ -1218,8 +1228,7 @@ int synx_merge(struct synx_session *session,
 		dprintk(SYNX_ERR,
 			"[sess :%llu] unable to init merge handle %u\n",
 			client->id, *params->h_merged_obj);
-		dma_fence_put(synx_obj->fence);
-		goto clear;
+		goto clean_up;
 	}
 
 	h_child_list = kzalloc(count*4, GFP_KERNEL);
@@ -1289,13 +1298,25 @@ int synx_merge(struct synx_session *session,
 	synx_put_client(client);
 	return SYNX_SUCCESS;
 clear:
-	synx_util_release_map_entry(map_entry);
+	synx_native_release_core(client, (*params->h_merged_obj));
+	synx_put_client(client);
+	return rc;
+
 clean_up:
-	kfree(synx_obj);
+	/*
+	 * if map_entry is not created the cleanup of child fences have to be
+	 * handled manually
+	 */
+	if (IS_ERR_OR_NULL(map_entry)) {
+		kfree(synx_obj);
+		synx_util_merge_error(client, params->h_synxs, count);
+		if (params->num_objs && params->num_objs <= count)
+			kfree(fences);
+
+	} else {
+		synx_util_release_map_entry(map_entry);
+	}
 fail:
-	synx_util_merge_error(client, params->h_synxs, count);
-	if (params->num_objs && params->num_objs <= count)
-		kfree(fences);
 	synx_put_client(client);
 	return rc;
 }
@@ -2827,6 +2848,11 @@ static int __init synx_init(void)
 	}
 
 	synx_dev->class = class_create(THIS_MODULE, SYNX_DEVICE_NAME);
+
+	if (IS_ERR(synx_dev->class)) {
+		rc = PTR_ERR(synx_dev->class);
+		goto err_class_create;
+	}
 	device_create(synx_dev->class, NULL, synx_dev->dev,
 		NULL, SYNX_DEVICE_NAME);
 
@@ -2877,6 +2903,8 @@ err:
 fail:
 	device_destroy(synx_dev->class, synx_dev->dev);
 	class_destroy(synx_dev->class);
+err_class_create:
+	cdev_del(&synx_dev->cdev);
 reg_fail:
 	unregister_chrdev_region(synx_dev->dev, 1);
 alloc_fail:
