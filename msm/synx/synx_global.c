@@ -7,6 +7,7 @@
 #include <linux/string.h>
 
 #include "synx_debugfs.h"
+#include "synx_interop.h"
 #include "synx_global.h"
 
 static struct synx_shared_mem synx_gmem;
@@ -827,14 +828,16 @@ fail:
 	return rc;
 }
 
-int synx_global_recover(enum synx_core_id core_id)
+int synx_global_recover_interop(enum synx_core_id core_id,
+	struct synx_hwfence_interops *hwfence_shared_ops)
 {
 	int rc = SYNX_SUCCESS;
 	u32 idx = 0;
 	const u32 size = SYNX_GLOBAL_MAX_OBJS;
 	unsigned long flags;
 	struct synx_global_coredata *synx_g_obj;
-
+	uint32_t h_hwfence = 0;
+	uint16_t waiting_cores = 0;
 	bool update;
 	int *clear_idx = NULL;
 	if (!synx_gmem.table)
@@ -865,6 +868,9 @@ int synx_global_recover(enum synx_core_id core_id)
 			 synx_g_obj->subscribers & (1UL << core_id)) {
 			synx_g_obj->subscribers &= ~(1UL << core_id);
 			synx_g_obj->refcount--;
+			h_hwfence = synx_g_obj->h_hwfence;
+			waiting_cores = synx_g_obj->waiters;
+
 			if (synx_g_obj->refcount == 0) {
 				memset(synx_g_obj, 0, sizeof(*synx_g_obj));
 				clear_idx[idx] = 1;
@@ -873,9 +879,18 @@ int synx_global_recover(enum synx_core_id core_id)
 			}
 		}
 		synx_gmem_unlock(idx, &flags);
-		if (update)
+		if (update)	{
 			synx_global_update_status(idx,
 				SYNX_STATE_SIGNALED_SSR);
+
+			if (core_id == SYNX_CORE_SOCCP &&
+				(waiting_cores & (1UL << core_id)) &&
+				!IS_ERR_OR_NULL(hwfence_shared_ops) &&
+				!IS_ERR_OR_NULL(hwfence_shared_ops->signal_fence)) {
+				hwfence_shared_ops->signal_fence(core_id, true, h_hwfence,
+					SYNX_STATE_SIGNALED_SSR);
+			}
+		}
 		idx = find_next_bit((unsigned long *)synx_gmem.bitmap,
 				size, idx + 1);
 	}
@@ -891,6 +906,12 @@ free:
 	kfree(clear_idx);
 
 	return rc;
+
+}
+
+int synx_global_recover(enum synx_core_id core_id)
+{
+	return synx_global_recover_interop(core_id, NULL);
 }
 
 int synx_global_test_status_update_coredata(u32 idx,
@@ -929,6 +950,64 @@ int synx_global_test_status_update_coredata(u32 idx,
 	synx_gmem_unlock(idx, &flags);
 
 	return status;
+}
+
+int synx_global_recover_index(enum synx_core_id core_id, bool global_unlock,
+	u32 idx, u32 status)
+{
+	int rc = SYNX_SUCCESS;
+	unsigned long flags;
+	u32 state = SYNX_STATE_INVALID;
+	struct synx_global_coredata *synx_g_obj;
+	bool clear = false;
+	bool update = false;
+	uint32_t h_synx, h_hwfence;
+
+	if (!synx_gmem.table)
+		return -SYNX_NOMEM;
+
+	if (core_id >= SYNX_CORE_MAX || !synx_is_valid_idx(idx))
+		return -SYNX_INVALID;
+
+	// Incase if SOCCP might have taken hw_mutex before crash
+	/* recover synx gmem lock if it was owned by core in ssr */
+	if (global_unlock && synx_gmem_lock_owner(0) == core_id) {
+		synx_gmem_lock_owner_clear(0);
+		hwspin_unlock_raw(synx_hwlock);
+	}
+
+	rc = synx_gmem_lock(idx, &flags);
+	if (rc)
+		return rc;
+	synx_g_obj = &synx_gmem.table[idx];
+	if (synx_g_obj->refcount &&
+			synx_g_obj->subscribers & (1UL << core_id)) {
+		synx_g_obj->subscribers &= ~(1UL << core_id);
+		synx_g_obj->refcount--;
+		state = synx_g_obj->status;
+		h_synx = synx_g_obj->handle;
+		h_hwfence = synx_g_obj->h_hwfence;
+
+		if (synx_g_obj->refcount == 0) {
+			memset(synx_g_obj, 0, sizeof(*synx_g_obj));
+			clear = true;
+		} else if (synx_g_obj->status == SYNX_STATE_ACTIVE)
+			update = true;
+	}
+	synx_gmem_unlock(idx, &flags);
+
+	if (update)
+		rc = synx_global_update_status(idx, status);
+	else if (clear)	{
+		ipclite_global_test_and_clear_bit(idx % 32,
+			(ipclite_atomic_uint32_t *)(synx_gmem.bitmap + idx/32));
+		dprintk(SYNX_MEM, "released global idx %u\n", idx);
+	}
+
+	dprintk(SYNX_DBG, "h_synx %u, h_hwfence %u, curr state %u, status %u",
+		h_synx, h_hwfence, state, status);
+
+	return rc;
 }
 
 int synx_global_mem_init(void)

@@ -3079,6 +3079,39 @@ int synx_internal_recover(enum synx_client_id id)
 	return synx_global_recover(core_id);
 }
 
+int synx_internal_notify_recover(enum synx_core_id id)
+{
+	if (IS_ERR_OR_NULL(hwfence_shared_ops.signal_fence)) {
+		dprintk(SYNX_ERR, "interop hwfence_signal_fence API not available");
+		return -SYNX_INVALID;
+	}
+
+	if (id != SYNX_CORE_SOCCP) {
+		dprintk(SYNX_ERR, "Invalid coreId %d\n", id);
+		return -SYNX_INVALID;
+	}
+
+	dprintk(SYNX_DBG, "Subsystem restart for core_id: %d\n", id);
+
+	return synx_global_recover_interop(id, &hwfence_shared_ops);
+}
+
+int synx_internal_signal_fence(enum synx_core_id id, bool is_core_ssr,
+	u32 h_synx, enum synx_signal_status status)
+{
+	if (id != SYNX_CORE_SOCCP) {
+		dprintk(SYNX_ERR, "Invalid core id %u passed\n", id);
+		return -SYNX_INVALID;
+	}
+
+	if (!synx_util_is_global_handle(h_synx)) {
+		dprintk(SYNX_ERR, "h_synx %u is not global\n", h_synx);
+		return -SYNX_INVALID;
+	}
+
+	return synx_global_recover_index(id, is_core_ssr, synx_util_global_idx(h_synx), status);
+}
+
 static int synx_local_mem_init(void)
 {
 	if (!synx_dev->native)
@@ -3213,7 +3246,8 @@ static int __init synx_init(void)
 
 	synx_shared_ops.share_handle_status = synx_internal_share_handle_status;
 	synx_shared_ops.get_fence = synx_internal_get_dma_fence;
-	synx_shared_ops.notify_recover = NULL;
+	synx_shared_ops.notify_recover = synx_internal_notify_recover;
+	synx_shared_ops.signal_fence = synx_internal_signal_fence;
 	rc  = synx_hwfence_init_interops(&synx_shared_ops, &hwfence_shared_ops);
 	if (rc) {
 		dprintk(SYNX_ERR, "Hw fence inter-op mapping failed, err %d\n", rc);
