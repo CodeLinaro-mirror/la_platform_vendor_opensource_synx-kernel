@@ -13,6 +13,7 @@ struct synx_ops synx_hwfence_ops = {
 	.uninitialize = NULL,
 	.create = NULL,
 	.release = NULL,
+	.release_n = NULL,
 	.signal = NULL,
 	.async_wait = NULL,
 	.get_fence = NULL,
@@ -28,6 +29,7 @@ static struct synx_ops synx_internal_ops = {
 	.uninitialize = synx_internal_uninitialize,
 	.create = synx_internal_create,
 	.release = synx_internal_release,
+	.release_n = synx_internal_release_n,
 	.signal = synx_internal_signal,
 	.async_wait = synx_internal_async_wait,
 	.get_fence = synx_internal_get_fence,
@@ -102,6 +104,14 @@ int synx_release(struct synx_session *session, u32 h_synx)
 	return session->ops->release(session, h_synx);
 }
 EXPORT_SYMBOL(synx_release);
+
+int synx_release_n(struct synx_session *session, struct synx_release_n_params *pParams)
+{
+	if (IS_ERR_OR_NULL(session) || !session->ops || !session->ops->release)
+		return -SYNX_INVALID;
+	return session->ops->release_n(session, pParams);
+}
+EXPORT_SYMBOL(synx_release_n);
 
 int synx_signal(struct synx_session *session, u32 h_synx, enum synx_signal_status status)
 {

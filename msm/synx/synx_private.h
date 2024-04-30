@@ -283,6 +283,8 @@ void *synx_internal_get_fence(struct synx_session *session, u32 h_synx);
 
 int synx_internal_release(struct synx_session *session, u32 h_synx);
 
+int synx_internal_release_n(struct synx_session *session, struct synx_release_n_params *params);
+
 int synx_internal_recover(enum synx_client_id id);
 
 /**
