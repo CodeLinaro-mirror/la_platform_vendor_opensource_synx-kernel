@@ -11,5 +11,6 @@ def define_anorak61():
         ],
         config_options = [
             "TARGET_SYNX_ENABLE",
+	    "CONFIG_MSM_GLOBAL_SYNX_V2"
         ],
     )

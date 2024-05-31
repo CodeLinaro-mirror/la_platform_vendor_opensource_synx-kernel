@@ -5,6 +5,7 @@
 #define pr_fmt(fmt) "%s:%s: " fmt, KBUILD_MODNAME, __func__
 
 #include <linux/module.h>
+#include <linux/version.h>
 #include <linux/irq.h>
 #include <linux/interrupt.h>
 #include <linux/irqdomain.h>
@@ -18,6 +19,7 @@
 
 #include <linux/hwspinlock.h>
 #include <soc/qcom/secure_buffer.h>
+#include <linux/qcom_scm.h>
 
 #include <linux/sysfs.h>
 
@@ -42,6 +44,7 @@ static struct ipclite_debug_struct *ipclite_dbg_struct;
 static struct ipclite_debug_inmem_buf *ipclite_dbg_inmem;
 static struct mutex ssr_mutex;
 static struct kobject *sysfs_kobj;
+static bool hibernation_enabled;
 
 static uint32_t channel_status_info[IPCMEM_NUM_HOSTS];
 static u32 global_atomic_support = GLOBAL_ATOMICS_ENABLED;
@@ -1003,6 +1006,38 @@ static void ipcmem_init(struct ipclite_mem *ipcmem)
 	IPCLITE_OS_LOG(IPCLITE_DBG, "Ipcmem init completed\n");
 }
 
+
+/*Add VMIDs corresponding to EVA, CDSP and VPU to set IPCMEM access control*/
+static int set_ipcmem_access_control(struct ipclite_info *ipclite)
+{
+	int ret = 0;
+#if (KERNEL_VERSION(5, 15, 0) < LINUX_VERSION_CODE)
+		uint64_t dspVMids = BIT(VMID_HLOS) | BIT(VMID_CDSP);
+		struct qcom_scm_vmperm destVM[2] = {
+							{VMID_HLOS, VMID_CDSP}
+						};
+		ret = qcom_scm_assign_mem(ipclite->ipcmem.mem.aux_base, ipclite->ipcmem.mem.size,
+		&dspVMids, destVM, 2);
+#else
+		int srcVM[1] = {VMID_HLOS};
+		int destVM[2] = {VMID_HLOS, VMID_CDSP};
+		int destVMperm[2] = {PERM_READ | PERM_WRITE,
+				PERM_READ | PERM_WRITE};
+		ret = hyp_assign_phys(ipclite->ipcmem.mem.aux_base,
+				ipclite->ipcmem.mem.size, srcVM, 1,
+				destVM, destVMperm, 2);
+#endif
+
+	if (ret != 0) {
+		IPCLITE_OS_LOG(IPCLITE_ERR, "hyp assign for ipcmem failed\n");
+		return ret;
+	}
+
+	hibernation_enabled = true;
+
+	return ret;
+}
+
 static int ipclite_channel_irq_init(struct device *parent, struct device_node *node,
 								struct ipclite_channel *channel)
 {
@@ -1470,7 +1505,13 @@ static int ipclite_probe(struct platform_device *pdev)
 	}
 	mem = &(ipclite->ipcmem.mem);
 	memset(mem->virt_base, 0, mem->size);
-
+	#if ((KERNEL_VERSION(6, 1, 0)) > LINUX_VERSION_CODE)
+	ret = set_ipcmem_access_control(ipclite);
+	if (ret) {
+		IPCLITE_OS_LOG(IPCLITE_ERR, "failed to set access control policy\n");
+		goto release;
+	}
+	#endif
 	ipcmem_init(&ipclite->ipcmem);
 
 	/* Set up sysfs for debug  */
@@ -1544,6 +1585,35 @@ error:
 	return ret;
 }
 
+static int ipclite_driver_freeze(struct device *dev)
+{
+	if (hibernation_enabled)
+		hibernation_enabled = false;
+
+	return 0;
+}
+
+static int ipclite_driver_restore(struct device *dev)
+{
+	int ret = 0;
+
+	if (!hibernation_enabled) {
+		memset(ipclite->ipcmem.mem.virt_base, 0, ipclite->ipcmem.mem.size);
+		ret = set_ipcmem_access_control(ipclite);
+		if (ret) {
+			dev_err(dev, "failed to setup ipclite mem\n");
+			return -EINVAL;
+		}
+	}
+
+	return 0;
+}
+
+static const struct dev_pm_ops ipclite_hibernate_pm_ops = {
+	.freeze = ipclite_driver_freeze,
+	.restore = ipclite_driver_restore,
+};
+
 static const struct of_device_id ipclite_of_match[] = {
 	{ .compatible = "qcom,ipclite"},
 	{}
@@ -1555,11 +1625,12 @@ static struct platform_driver ipclite_driver = {
 	.driver = {
 		.name = "ipclite",
 		.of_match_table = ipclite_of_match,
+		.pm = &ipclite_hibernate_pm_ops,
 	},
 };
 
 module_platform_driver(ipclite_driver);
 
 MODULE_DESCRIPTION("IPCLite Driver");
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");
 MODULE_SOFTDEP("pre: qcom_hwspinlock");

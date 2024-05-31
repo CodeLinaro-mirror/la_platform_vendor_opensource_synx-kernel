@@ -1,8 +1,11 @@
 # SPDX-License-Identifier: GPL-2.0-only
-
-CONFIG_DEBUGFS_SYNX = false
-
-obj-m += synx/ipclite.o
+ifeq ($(CONFIG_MSM_GLOBAL_SYNX_V2), true)
 obj-m += synx-driver.o
-synx-driver-objs := synx/synx.o synx/synx_util.o synx/synx_debugfs.o synx/synx_global.o
-synx-driver-$(CONFIG_DEBUGFS_SYNX) += synx/synx_debugfs_util.o
+obj-m  += ipclite.o
+synx-driver-y := synx_v2.o synx_util_v2.o synx_debugfs_v2.o
+else
+obj-m  += synx-driver.o
+obj-m  += qcom_ipc_lite.o
+synx-driver-y := synx.o synx_util.o synx_debugfs.o
+endif
+

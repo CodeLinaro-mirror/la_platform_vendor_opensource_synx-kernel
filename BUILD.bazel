@@ -17,11 +17,10 @@ ddk_headers(
     hdrs = glob(driver_header_globs),
     includes = [
         "include/uapi/synx",
-        "include/uapi/synx/media",
-        "msm/synx",
+	"include/uapi/synx/media",
+	"msm/synx",
     ],
 )
 
 load(":anorak61.bzl", "define_anorak61")
-
 define_anorak61()

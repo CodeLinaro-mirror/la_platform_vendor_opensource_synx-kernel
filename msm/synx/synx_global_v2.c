@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/hwspinlock.h>
 #include <linux/string.h>
 #include <linux/slab.h>
 
-#include "synx_debugfs.h"
-#include "synx_global.h"
+#include "synx_debugfs_v2.h"
+#include "synx_global_v2.h"
 
 static struct synx_shared_mem synx_gmem;
 static struct hwspinlock *synx_hwlock;
