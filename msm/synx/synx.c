@@ -29,6 +29,8 @@ struct synx_hwfence_interops synx_shared_ops = { NULL };
 struct synx_device *synx_dev;
 static atomic64_t synx_counter = ATOMIC64_INIT(1);
 
+DEFINE_RATELIMIT_STATE(synx_ratelimit_state, 1 * HZ, DEFAULT_RATELIMIT_BURST);
+
 void synx_external_callback(s32 sync_obj, int status, void *data)
 {
 	struct synx_signal_cb *signal_cb = data;
@@ -665,9 +667,11 @@ void synx_signal_handler(struct work_struct *cb_dispatch)
 	 * all local clients to have released the handle coredata.
 	 */
 	if (IS_ERR_OR_NULL(synx_obj)) {
-		dprintk(SYNX_WARN,
-			"handle %d has no local clients\n",
-			h_synx);
+		if (__ratelimit(&synx_ratelimit_state)) {
+			dprintk(SYNX_WARN,
+				"handle %d has no local clients\n",
+				h_synx);
+		}
 		dprintk(SYNX_MEM, "signal cb destroyed %pK\n",
 			signal_cb);
 		kfree(signal_cb);
@@ -2750,6 +2754,7 @@ static ssize_t synx_read(struct file *filep,
 
 	list_del_init(&cb->node);
 	mutex_unlock(&client->event_q_lock);
+	memset(&data, 0, sizeof(struct synx_userpayload_info_v2));
 
 	rc = size;
 	data.synx_obj = cb->kernel_cb.h_synx;
@@ -2825,8 +2830,9 @@ struct synx_session *synx_internal_initialize(
 		&client->node, (u64)client);
 	spin_unlock_bh(&synx_dev->native->metadata_map_lock);
 
-	dprintk(SYNX_INFO, "[sess :%llu] session created %s\n",
-		client->id, params->name);
+	if (__ratelimit(&synx_ratelimit_state))
+		dprintk(SYNX_INFO, "[sess :%llu] session created %s\n",
+			client->id, params->name);
 
 	return (struct synx_session *)client;
 }
