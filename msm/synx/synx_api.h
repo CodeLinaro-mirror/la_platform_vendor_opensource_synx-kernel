@@ -20,7 +20,6 @@
  *                            when it doesn't hold a valid synx handle
  */
 #define SYNX_INVALID_HANDLE 0
-
 #define SYNX_HW_FENCE_CLIENT_START 1024
 #define SYNX_HW_FENCE_CLIENT_END 4096
 #define SYNX_MAX_SIGNAL_PER_CLIENT 64
@@ -247,6 +246,7 @@ enum synx_client_id {
 	SYNX_CLIENT_NSP_CTX0,
 	SYNX_CLIENT_IFE_CTX0,
 	SYNX_CLIENT_ICP_CTX0,
+	SYNX_CLIENT_END,
 	SYNX_CLIENT_HW_FENCE_GFX_CTX0 = SYNX_HW_FENCE_CLIENT_START,
 	SYNX_CLIENT_HW_FENCE_IPE_CTX0 = SYNX_CLIENT_HW_FENCE_GFX_CTX0 + SYNX_MAX_SIGNAL_PER_CLIENT,
 	SYNX_CLIENT_HW_FENCE_VID_CTX0 = SYNX_CLIENT_HW_FENCE_IPE_CTX0 + SYNX_MAX_SIGNAL_PER_CLIENT,
@@ -453,6 +453,15 @@ struct synx_callback_params {
 	void *userdata;
 	synx_user_callback_t cancel_cb_func;
 	u64 timeout_ms;
+};
+
+/**
+ * enum synx_resource_type - Synx resource type
+ *
+ * SYNX_RESOURCE_SOCCP : Enable resources for SOCCP
+ */
+enum synx_resource_type {
+	SYNX_RESOURCE_SOCCP = 0x01,
 };
 
 /**
