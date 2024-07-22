@@ -904,21 +904,21 @@ void synx_timer_handler(struct work_struct *cb_dispatch)
 	struct synx_handle_coredata *synx_data;
 	struct synx_coredata *synx_obj;
 
-	synx_cb = (struct synx_cb_data *)synx_timer_cb->data;
+	synx_cb = (struct synx_cb_data *)synx_timer_cb->synx_cb;
 
-	client = synx_get_client(synx_cb->session);
+	client = synx_get_client(synx_timer_cb->session);
 	if (IS_ERR_OR_NULL(client)) {
 		dprintk(SYNX_ERR,
 			"invalid session data %pK in synx_cb %pK\n",
-			synx_cb->session, synx_cb);
+			synx_timer_cb->session, synx_cb);
 		goto free;
 	}
-	synx_data = synx_util_acquire_handle(client, synx_cb->h_synx);
+	synx_data = synx_util_acquire_handle(client, synx_timer_cb->h_synx);
 	synx_obj = synx_util_obtain_object(synx_data);
 	if (IS_ERR_OR_NULL(synx_obj)) {
 		dprintk(SYNX_ERR,
 			"[sess : %pK] invalid handle access 0x%x\n",
-			synx_cb->session, synx_cb->h_synx);
+			synx_timer_cb->session, synx_timer_cb->h_synx);
 		goto fail;
 	}
 	dprintk(SYNX_VERB, "Timer callback expired for synx_cb %pK\n", synx_cb);
@@ -959,7 +959,9 @@ void synx_timer_cb(struct timer_list *data)
 		return;
 	}
 
-	synx_timer_cb->data = (void *)synx_cb;
+	synx_timer_cb->synx_cb = synx_cb;
+	synx_timer_cb->session = synx_cb->session;
+	synx_timer_cb->h_synx = synx_cb->h_synx;
 
 	/*
 	 * since the timer is waited upon during signal dispatch,
@@ -1164,7 +1166,7 @@ int synx_internal_cancel_async_wait(
 			dprintk(SYNX_VERB,
 				"Deleting timer synx_cb %p, timeout 0x%llx\n",
 				synx_cb, synx_cb->timeout);
-			del_timer(&synx_cb->synx_timer);
+			del_timer_sync(&synx_cb->synx_timer);
 		}
 		switch (ret) {
 		case 1:
@@ -2816,7 +2818,7 @@ struct synx_session *synx_internal_initialize(
 		return ERR_PTR(-SYNX_NOMEM);
 
 	if (params->name)
-		strlcpy(client->name, params->name, sizeof(client->name));
+		strscpy(client->name, params->name, sizeof(client->name));
 
 	client->active = true;
 	client->dma_context = dma_fence_context_alloc(1);
@@ -2843,8 +2845,13 @@ struct synx_session *synx_internal_initialize(
 
 int synx_internal_uninitialize(struct synx_session *session)
 {
+	int rc = -SYNX_INVALID;
 	struct synx_client *client = NULL, *curr;
 
+	if (IS_ERR_OR_NULL(session)) {
+		dprintk(SYNX_ERR, "invalid session\n");
+		return rc;
+	}
 	spin_lock_bh(&synx_dev->native->metadata_map_lock);
 	hash_for_each_possible(synx_dev->native->client_metadata_map,
 			curr, node, (u64)session) {
@@ -2852,15 +2859,22 @@ int synx_internal_uninitialize(struct synx_session *session)
 			if (curr->active) {
 				curr->active = false;
 				client = curr;
+				rc = SYNX_SUCCESS;
+			} else {
+				rc = -SYNX_ALREADY;
+				dprintk(SYNX_ERR,
+					"[sess:%llu] already uninitialized rc:%d\n", curr->id, rc);
 			}
 			break;
 		}
 	}
 	spin_unlock_bh(&synx_dev->native->metadata_map_lock);
+	if (rc == -SYNX_INVALID)
+		dprintk(SYNX_ERR, "client not found, rc: %d\n", rc);
 
 	/* release the reference obtained at synx init */
 	synx_put_client(client);
-	return SYNX_SUCCESS;
+	return rc;
 }
 
 static int synx_open(struct inode *inode, struct file *filep)
@@ -2913,7 +2927,7 @@ int synx_register_ops(
 		client_ops->valid = true;
 		memcpy(&client_ops->ops, &params->ops,
 			sizeof(client_ops->ops));
-		strlcpy(client_ops->name, params->name,
+		strscpy(client_ops->name, params->name,
 			sizeof(client_ops->name));
 		client_ops->type = params->type;
 		dprintk(SYNX_INFO,
