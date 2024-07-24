@@ -2246,8 +2246,12 @@ static int synx_native_import_handle(struct synx_client *client,
 						old_entry, security_key);
 	}
 
-	if (rc != SYNX_SUCCESS)
-		return rc;
+	if (IS_ERR_OR_NULL(map_entry)) {
+		dprintk(SYNX_ERR,
+			"[sess :%llu] map entry is NULL for handle %u\n",
+			client->id, h_synx);
+		return -SYNX_INVALID;
+	}
 
 	*params->new_h_synx = h_synx;
 
