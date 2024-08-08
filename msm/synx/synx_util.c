@@ -12,6 +12,7 @@
 #include "synx_util.h"
 #include "synx_interop.h"
 #include "synx_private.h"
+static atomic64_t seq_counter = ATOMIC64_INIT(1);
 extern void synx_external_callback(s32 sync_obj, int status, void *data);
 
 int synx_util_init_coredata(struct synx_coredata *synx_obj,
@@ -20,6 +21,7 @@ int synx_util_init_coredata(struct synx_coredata *synx_obj,
 	u64 dma_context)
 {
 	int rc = -SYNX_INVALID;
+	u64 seq = 0;
 	spinlock_t *fence_lock;
 	struct dma_fence *fence;
 	struct synx_fence_entry *entry;
@@ -79,8 +81,9 @@ int synx_util_init_coredata(struct synx_coredata *synx_obj,
 			goto free;
 		}
 
+		seq = atomic64_inc_return(&seq_counter);
 		spin_lock_init(fence_lock);
-		dma_fence_init(fence, ops, fence_lock, dma_context, 1);
+		dma_fence_init(fence, ops, fence_lock, dma_context, seq);
 
 		synx_obj->fence = fence;
 		synx_util_activate(synx_obj);
