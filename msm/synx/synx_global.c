@@ -543,8 +543,8 @@ u32 synx_global_test_status_set_wait(u32 idx,
 	return status;
 }
 
-static int synx_global_update_status_core(u32 idx,
-	u32 status)
+int synx_global_update_status_core(u32 idx,
+	u32 status, bool is_recursion)
 {
 	u32 i, p_idx;
 	int rc;
@@ -555,6 +555,12 @@ static int synx_global_update_status_core(u32 idx,
 	u32 h_parents[SYNX_GLOBAL_MAX_PARENTS] = {0};
 	bool wait_cores[SYNX_CORE_MAX] = {false};
 
+	if (!synx_gmem.table)
+		return -SYNX_NOMEM;
+
+	if (!synx_is_valid_idx(idx) || status <= SYNX_STATE_ACTIVE)
+		return -SYNX_INVALID;
+
 	rc = synx_gmem_lock(idx, &flags);
 	if (rc)
 		return rc;
@@ -564,6 +570,11 @@ static int synx_global_update_status_core(u32 idx,
 	data = synx_g_obj->handle;
 	data <<= 32;
 	if (synx_g_obj->num_child != 0) {
+		/* composite handle cannot be signaled directly*/
+		if (!is_recursion) {
+			synx_gmem_unlock(idx, &flags);
+			return -SYNX_INVALID;
+		}
 		/* composite handle */
 		synx_g_obj->num_child--;
 		if (synx_g_obj->status == SYNX_STATE_ACTIVE ||
@@ -592,6 +603,11 @@ static int synx_global_update_status_core(u32 idx,
 				synx_g_obj->handle, synx_g_obj->num_child);
 		}
 	} else {
+		if (synx_g_obj->status != SYNX_STATE_ACTIVE) {
+			synx_gmem_unlock(idx, &flags);
+			return -SYNX_ALREADY;
+		}
+
 		synx_g_obj->status = status;
 		data |= synx_g_obj->status;
 		synx_global_get_waiting_cores_locked(synx_g_obj,
@@ -641,7 +657,7 @@ static int synx_global_update_status_core(u32 idx,
 		p_idx = h_parents[i];
 		if (p_idx == 0)
 			continue;
-		synx_global_update_status_core(p_idx, status);
+		synx_global_update_status_core(p_idx, status, true);
 	}
 
 	return SYNX_SUCCESS;
@@ -672,7 +688,7 @@ int synx_global_update_status(u32 idx, u32 status)
 	}
 	synx_gmem_unlock(idx, &flags);
 
-	return synx_global_update_status_core(idx, status);
+	return synx_global_update_status_core(idx, status, false);
 
 fail:
 	synx_gmem_unlock(idx, &flags);
@@ -879,9 +895,9 @@ int synx_global_recover_interop(enum synx_core_id core_id,
 			}
 		}
 		synx_gmem_unlock(idx, &flags);
-		if (update)	{
-			synx_global_update_status(idx,
-				SYNX_STATE_SIGNALED_SSR);
+		if (update) {
+			synx_global_update_status_core(idx,
+				SYNX_STATE_SIGNALED_SSR, false);
 
 			if (core_id == SYNX_CORE_SOCCP &&
 				(waiting_cores & (1UL << core_id)) &&
@@ -997,7 +1013,7 @@ int synx_global_recover_index(enum synx_core_id core_id, bool global_unlock,
 	synx_gmem_unlock(idx, &flags);
 
 	if (update)
-		rc = synx_global_update_status(idx, status);
+		rc = synx_global_update_status_core(idx, status, false);
 	else if (clear)	{
 		ipclite_global_test_and_clear_bit(idx % 32,
 			(ipclite_atomic_uint32_t *)(synx_gmem.bitmap + idx/32));

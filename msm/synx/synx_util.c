@@ -156,9 +156,9 @@ int synx_util_add_callback(struct synx_coredata *synx_obj,
 		if (rc == -ENOENT) {
 			if (synx_util_is_global_object(synx_obj)) {
 				/* signal (if) global handle */
-				rc = synx_global_update_status(
+				rc = synx_global_update_status_core(
 					synx_obj->global_idx,
-					synx_util_get_object_status(synx_obj));
+					synx_util_get_object_status(synx_obj), false);
 				if (rc != SYNX_SUCCESS)
 					dprintk(SYNX_ERR,
 						"status update of %u with fence %pK\n",

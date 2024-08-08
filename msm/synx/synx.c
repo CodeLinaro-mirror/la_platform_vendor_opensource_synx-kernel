@@ -651,7 +651,7 @@ void synx_signal_handler(struct work_struct *cb_dispatch)
 				synx_util_global_idx(h_synx) :
 				synx_obj->global_idx;
 		if (synx_global_get_status(idx) == SYNX_STATE_ACTIVE) {
-			rc = synx_global_update_status(idx, status);
+			rc = synx_global_update_status_core(idx, status, false);
 			if (rc != SYNX_SUCCESS)
 				dprintk(SYNX_ERR,
 					"global status update of %u failed=%d\n",
@@ -839,8 +839,8 @@ int synx_internal_signal(struct synx_session *session, u32 h_synx, enum synx_sig
 	mutex_lock(&synx_obj->obj_lock);
 	if (synx_util_is_global_handle(h_synx) ||
 			synx_util_is_global_object(synx_obj))
-		rc = synx_global_update_status(
-				synx_obj->global_idx, status);
+		rc = synx_global_update_status_core(
+				synx_obj->global_idx, status, false);
 
 	if (rc != SYNX_SUCCESS) {
 		mutex_unlock(&synx_obj->obj_lock);

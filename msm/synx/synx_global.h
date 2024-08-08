@@ -237,6 +237,19 @@ u32 synx_global_test_status_set_wait(u32 idx,
 int synx_global_update_status(u32 idx, u32 status);
 
 /**
+ * synx_global_update_status_core - Update status of the global entry
+ *
+ * @param idx          : Global entry index
+ * @param status       : status of handle
+ * @param is_recursion : false if called from a different function;
+ *                       accordingly rejects signals on parent handle.
+ *
+ * @return SYNX_SUCCESS on success. Negative error on failure.
+ */
+
+int synx_global_update_status_core(u32 idx, u32 status, bool is_recursion);
+
+/**
  * synx_global_get_ref - Get additional reference on global entry
  *
  * @param idx : Global entry index
