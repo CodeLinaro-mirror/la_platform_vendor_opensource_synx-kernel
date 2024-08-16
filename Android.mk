@@ -16,7 +16,9 @@ SYNX_BLD_DIR := $(TOP)/vendor/qcom/opensource/synx-kernel
 # This is set once per LOCAL_PATH, not per (kernel) module
 KBUILD_OPTIONS := SYNX_ROOT=$(SYNX_BLD_DIR)
 KBUILD_OPTIONS += BOARD_PLATFORM=$(TARGET_BOARD_PLATFORM)
+ifeq ($(CONFIG_QTI_HW_FENCE),y)
 KBUILD_OPTIONS += KBUILD_EXTRA_SYMBOLS+=$(PWD)/$(call intermediates-dir-for,DLKM,hw-fence-module-symvers)/Module.symvers
+endif
 ###########################################################
 
 DLKM_DIR   := $(TOP)/device/qcom/common/dlkm
