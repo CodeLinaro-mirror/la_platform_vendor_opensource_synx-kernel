@@ -18,6 +18,9 @@ endif
 ifeq ($(TARGET_BOARD_PLATFORM), anorak61)
 CONFIG_MSM_GLOBAL_SYNX_V2 := true
 endif
+ifeq ($(TARGET_BOARD_PLATFORM), neo61)
+CONFIG_MSM_GLOBAL_SYNX := true
+endif
 ifeq ($(TARGET_SYNX_ENABLE), true)
 ifneq (,$(call is-board-platform-in-list2,$(TARGET_BOARD_PLATFORM)))
 BOARD_VENDOR_KERNEL_MODULES += $(KERNEL_MODULES_OUT)/synx-driver.ko

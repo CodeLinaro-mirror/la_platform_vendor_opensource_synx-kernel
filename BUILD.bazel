@@ -24,3 +24,6 @@ ddk_headers(
 
 load(":anorak61.bzl", "define_anorak61")
 define_anorak61()
+
+load(":neo61.bzl", "define_neo61")
+define_neo61()
