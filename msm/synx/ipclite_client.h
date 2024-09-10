@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2021-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2023,2025, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #ifndef __IPCLITE_CLIENT_H__
 #define __IPCLITE_CLIENT_H__
@@ -26,6 +26,15 @@ enum ipcmem_host_type {
 	IPCMEM_GLOBAL_HOST  =  0xFE,                  /**< Global Host */
 	IPCMEM_INVALID_HOST =  0xFF,				  /**< Invalid processor */
 };
+
+enum ipclite_feature_mask {
+	IPCLITE_GLOBAL_ATOMIC = 0x0001ULL,
+	IPCLITE_TEST_SUITE = 0x0002ULL,
+	IPCLITE_GLOBAL_LOCK = 0x0004ULL,
+};
+
+/* Max Atomic locks supported*/
+#define IPCLITE_MAX_GLOBAL_LOCK 256
 
 struct global_region_info {
 	void *virt_base;
@@ -201,5 +210,45 @@ int32_t ipclite_global_atomic_inc(ipclite_atomic_int32_t *addr);
  * @return previous value.
  */
 int32_t ipclite_global_atomic_dec(ipclite_atomic_int32_t *addr);
+
+/**
+ * get_ipclite_feature() - returns true if atomic feature is enabled.
+ *
+ * @feature_mask : feature mask to be passed to check if it is enabled.
+ *
+ * @return true if atomic feature is enabled.
+ */
+bool get_ipclite_feature(enum ipclite_feature_mask feature_mask);
+
+/**
+ * ipclite_global_spin_lock_timeout() - Does atomic lock acquire based on index.
+ *
+ * @idx  : Index for which atomic lock has to be acquired
+ * @to : timeout value for acquiring the lock.
+ * @flags : flags to be passed for irq save.
+ *
+ * @return Zero on successful acquire, negative on failure.
+ */
+int ipclite_global_spin_lock_timeout(uint32_t idx, unsigned long to, unsigned long *flags);
+
+/**
+ * ipclite_global_spin_unlock() - Does atomic lock release based on index.
+ *
+ * @idx  : Index for which atomic lock has to be released
+ * @flags  : flags to be passed for irq restore
+ *
+ * @return Zero on successful release, negative on failure.
+ */
+int ipclite_global_spin_unlock(uint32_t idx, unsigned long *flags);
+
+/**
+ * ipclite_global_spin_bust() - Does atomic lock release if core undergoing ssr is holding the lock.
+ *
+ * @idx  : Index for which atomic lock has to be released
+ * @core_id  : Id of core undergoing ssr.
+ *
+ * @return Zero on successful release, negative on failure.
+ */
+int ipclite_global_spin_bust(uint32_t idx, uint32_t core_id);
 
 #endif

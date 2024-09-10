@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2021-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2021-2025, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #define pr_fmt(fmt) "%s:%s: " fmt, KBUILD_MODNAME, __func__
 
@@ -34,7 +34,7 @@ static struct kobject *sysfs_kobj;
 
 static uint32_t ipclite_debug_level = IPCLITE_ERR | IPCLITE_WARN | IPCLITE_INFO;
 static uint32_t ipclite_debug_control = IPCLITE_DMESG_LOG, ipclite_debug_dump;
-static uint32_t enabled_hosts, partitions, major_ver, minor_ver;
+static uint32_t enabled_hosts, major_ver, minor_ver;
 static uint64_t feature_mask;
 
 static inline bool is_host_enabled(uint32_t host)
@@ -209,7 +209,89 @@ int ipclite_hw_mutex_release(void)
 }
 EXPORT_SYMBOL(ipclite_hw_mutex_release);
 
+bool get_ipclite_feature(enum ipclite_feature_mask feature_mask)
+{
+	return !!(IS_FEATURE_CONFIG(feature_mask));
+}
+EXPORT_SYMBOL(get_ipclite_feature);
+
 /* Atomic Functions Start */
+int ipclite_global_spin_lock_timeout(uint32_t idx, unsigned long to, unsigned long *flags)
+{
+	unsigned long expire = msecs_to_jiffies((unsigned long)to) + jiffies;
+	uint32_t owner;
+
+	if (unlikely(!ipclite)) {
+		pr_err("IPCLite not initialized\n");
+		return -ENOMEM;
+	}
+
+	if (idx >= IPCLITE_MAX_GLOBAL_LOCK)
+		return -EINVAL;
+
+	while (true) {
+		local_irq_save(*flags);
+		preempt_disable();
+
+		owner = atomic_fetch_or(1<<IPCMEM_APPS,
+		(ipclite_atomic_uint32_t *)&ipclite->gl_lock_table->global_lock[idx]);
+
+		if (!owner)
+			break;
+
+		if (!((1<<IPCMEM_APPS) & owner))
+			atomic_fetch_and(~(1<<IPCMEM_APPS),
+			(ipclite_atomic_uint32_t *)&ipclite->gl_lock_table->global_lock[idx]);
+
+		local_irq_restore(*flags);
+		preempt_enable();
+
+		if (time_is_before_eq_jiffies(expire))
+			return -ETIMEDOUT;
+	}
+	return 0;
+}
+EXPORT_SYMBOL(ipclite_global_spin_lock_timeout);
+
+int ipclite_global_spin_unlock(uint32_t idx, unsigned long *flags)
+{
+	uint32_t owner;
+
+	if (unlikely(!ipclite)) {
+		pr_err("IPCLite not initialized\n");
+		return -ENOMEM;
+	}
+
+	if (idx >= IPCLITE_MAX_GLOBAL_LOCK)
+		return -EINVAL;
+
+	owner = atomic_fetch_and(~(1<<IPCMEM_APPS),
+			(ipclite_atomic_uint32_t *)&ipclite->gl_lock_table->global_lock[idx]);
+
+	if (!((1<<IPCMEM_APPS) & owner)) {
+		IPCLITE_OS_LOG(IPCLITE_ERR, "idx %d is not acquired by current core", idx);
+		return -EINVAL;
+	}
+
+	local_irq_restore(*flags);
+	preempt_enable();
+
+	return 0;
+}
+EXPORT_SYMBOL(ipclite_global_spin_unlock);
+
+int ipclite_global_spin_bust(uint32_t idx, uint32_t core_id)
+{
+	if (idx >= IPCLITE_MAX_GLOBAL_LOCK)
+		return -EINVAL;
+	if (ipclite->gl_lock_table->global_lock[idx] & (1<<core_id)) {
+		atomic_set((ipclite_atomic_uint32_t *)&ipclite->gl_lock_table->global_lock[idx], 0);
+		IPCLITE_OS_LOG(IPCLITE_DBG, "Ipclite Bust for atomic lock successful");
+	}
+	return 0;
+}
+EXPORT_SYMBOL(ipclite_global_spin_bust);
+
 void ipclite_atomic_init_u32(ipclite_atomic_uint32_t *addr, uint32_t data)
 {
 	BUG_ON(addr == NULL);
@@ -750,37 +832,6 @@ static void insert_magic_number(void)
 	block[0] = ~block[0];
 }
 
-static int32_t setup_toc(struct ipclite_mem *ipcmem)
-{
-	size_t offset = 0;
-	void *virt_base = ipcmem->mem.virt_base;
-	struct ipcmem_offsets *offsets = &ipcmem->toc->offsets;
-	struct ipcmem_toc_data *toc_data = &ipcmem->toc_data;
-
-	/* Setup Offsets */
-	offsets->host_info		= offset += IPCMEM_TOC_VAR_OFFSET;
-	offsets->global_entry		= offset += sizeof(struct ipcmem_host_info);
-	offsets->partition_info		= offset += sizeof(struct ipcmem_partition_entry);
-	offsets->partition_entry	= offset += sizeof(struct ipcmem_partition_info);
-	// offsets->debug		= virt_base + size - 64K;
-	/* Offset to be used for any new structure added in toc (after partition_entry) */
-	// offsets->new_struct	= offset += sizeof(struct ipcmem_partition_entry)*IPCMEM_NUM_HOSTS;
-
-	IPCLITE_OS_LOG(IPCLITE_DBG, "toc_data offsets:");
-	IPCLITE_OS_LOG(IPCLITE_DBG, "host_info = 0x%X", offsets->host_info);
-	IPCLITE_OS_LOG(IPCLITE_DBG, "global_entry = 0x%X", offsets->global_entry);
-	IPCLITE_OS_LOG(IPCLITE_DBG, "partition_info = 0x%X", offsets->partition_info);
-	IPCLITE_OS_LOG(IPCLITE_DBG, "partition_entry = 0x%X", offsets->partition_entry);
-
-	/* Point structures to the appropriate offset in TOC */
-	toc_data->host_info		= ADD_OFFSET(virt_base, offsets->host_info);
-	toc_data->global_entry		= ADD_OFFSET(virt_base, offsets->global_entry);
-	toc_data->partition_info	= ADD_OFFSET(virt_base, offsets->partition_info);
-	toc_data->partition_entry	= ADD_OFFSET(virt_base, offsets->partition_entry);
-
-	return 0;
-}
-
 static void setup_global_partition(struct ipclite_mem *ipcmem, uint32_t base_offset)
 {
 	/*Fill in global partition details*/
@@ -802,6 +853,31 @@ static void setup_global_partition(struct ipclite_mem *ipcmem, uint32_t base_off
 				ipcmem->global_partition->hdr.partition_type,
 				ipcmem->global_partition->hdr.region_offset,
 				ipcmem->global_partition->hdr.region_size);
+}
+
+static void setup_atomic_partition(struct ipclite_mem *ipcmem, uint32_t base_offset)
+{
+	struct ipcmem_atomic_partition *atomic_partition;
+	/*Fill in atomic partition details*/
+	ipcmem->toc_data.atomic_entry->base_offset = base_offset;
+	ipcmem->toc_data.atomic_entry->size = ATOMIC_PARTITION_SIZE;
+	ipcmem->toc_data.atomic_entry->flags = DEFAULT_PARTITION_FLAGS;
+	ipcmem->toc_data.atomic_entry->host0 = IPCMEM_GLOBAL_HOST;
+	ipcmem->toc_data.atomic_entry->host1 = IPCMEM_GLOBAL_HOST;
+
+	atomic_partition = ADD_OFFSET(ipcmem->mem.virt_base, base_offset);
+
+	IPCLITE_OS_LOG(IPCLITE_DBG, "base_offset =%x,atomic_partition = %p\n",
+				base_offset,
+				atomic_partition);
+
+	atomic_partition->hdr = atomic_partition_hdr;
+
+	IPCLITE_OS_LOG(IPCLITE_DBG, "hdr.type = %x,hdr.offset = %x,hdr.size = %d\n",
+				atomic_partition->hdr.partition_type,
+				atomic_partition->hdr.region_offset,
+				atomic_partition->hdr.region_size);
+	ipclite->gl_lock_table = ADD_OFFSET(atomic_partition, atomic_partition->hdr.region_offset);
 }
 
 static void update_partition(struct ipclite_mem *ipcmem, uint32_t p)
@@ -864,7 +940,7 @@ static int32_t setup_partitions(struct ipclite_mem *ipcmem, uint32_t base_offset
 		update_partition(ipcmem, p);
 
 	/*Set up info to parse partition entries*/
-	ipcmem->toc_data.partition_info->num_entries = partitions = num_entry;
+	ipcmem->toc_data.partition_info->num_entries = ipcmem->num_partitions = num_entry;
 	ipcmem->toc_data.partition_info->entry_size = sizeof(struct ipcmem_partition_entry);
 
 	return 0;
@@ -873,47 +949,88 @@ static int32_t setup_partitions(struct ipclite_mem *ipcmem, uint32_t base_offset
 static int32_t ipcmem_init(struct ipclite_mem *ipcmem, struct device_node *pn)
 {
 	int ret = 0;
-	uint32_t remote_pid = 0, host_count = 0, gmem_offset = 0;
+	size_t toc_offset = 0, partition_offset = 0;
+	uint32_t remote_pid;
 	struct device_node *cn;
+	struct ipcmem_offsets *offsets;
+	struct ipcmem_toc_data *toc_data = &ipcmem->toc_data;
+	void *virt_base = ipcmem->mem.virt_base;
 
 	for_each_available_child_of_node(pn, cn) {
 		of_property_read_u32(cn, "qcom,remote-pid", &remote_pid);
-		if (remote_pid < IPCMEM_NUM_HOSTS) {
+		if (remote_pid < IPCMEM_NUM_HOSTS)
 			enabled_hosts |= BIT_MASK(remote_pid);
-			host_count++;
-		}
 	}
 	IPCLITE_OS_LOG(IPCLITE_DBG, "enabled_hosts = 0x%X", enabled_hosts);
-	IPCLITE_OS_LOG(IPCLITE_DBG, "host_count = %u", host_count);
 
 	ipcmem->toc = ipcmem->mem.virt_base;
 	IPCLITE_OS_LOG(IPCLITE_DBG, "toc_base = %p\n", ipcmem->toc);
 
-	ret = setup_toc(ipcmem);
+	offsets = &ipcmem->toc->offsets;
+
+	/* Setup host info */
+	offsets->host_info = toc_offset += IPCMEM_TOC_VAR_OFFSET;
+	IPCLITE_OS_LOG(IPCLITE_DBG, "host_info = 0x%X", offsets->host_info);
+
+	toc_data->host_info = ADD_OFFSET(virt_base, offsets->host_info);
+
+	/* Setup Global partition*/
+	offsets->global_entry = toc_offset += sizeof(struct ipcmem_host_info);
+	IPCLITE_OS_LOG(IPCLITE_DBG, "global_entry = 0x%X", offsets->global_entry);
+
+	toc_data->global_entry = ADD_OFFSET(virt_base, offsets->global_entry);
+
+	partition_offset += IPCMEM_TOC_SIZE;
+	setup_global_partition(ipcmem, partition_offset);
+
+	/* Setup Partition info*/
+	offsets->partition_info = toc_offset += sizeof(struct ipcmem_partition_entry);
+	IPCLITE_OS_LOG(IPCLITE_DBG, "partition_info = 0x%X", offsets->partition_info);
+
+	toc_data->partition_info = ADD_OFFSET(virt_base, offsets->partition_info);
+
+	/* Setup Partitions*/
+	offsets->partition_entry = toc_offset += sizeof(struct ipcmem_partition_info);
+	IPCLITE_OS_LOG(IPCLITE_DBG, "partition_entry = 0x%X", offsets->partition_entry);
+
+	toc_data->partition_entry = ADD_OFFSET(virt_base, offsets->partition_entry);
+
+	partition_offset += GLOBAL_PARTITION_SIZE;
+	ret = setup_partitions(ipcmem, partition_offset);
 	if (ret) {
-		IPCLITE_OS_LOG(IPCLITE_ERR, "Failed to set up toc");
+		IPCLITE_OS_LOG(IPCLITE_ERR, "Failed to set up partitions");
 		return ret;
 	}
+
+	/* Setup Atomic Partition */
+	offsets->atomic_entry = toc_offset +=
+		sizeof(struct ipcmem_partition_entry)*ipcmem->num_partitions;
+	IPCLITE_OS_LOG(IPCLITE_DBG, "atomic_entry = 0x%X", offsets->atomic_entry);
+
+	toc_data->atomic_entry = ADD_OFFSET(virt_base, offsets->atomic_entry);
+
+	partition_offset += DEFAULT_PARTITION_SIZE*ipcmem->num_partitions;
+	setup_atomic_partition(ipcmem, partition_offset);
 
 	/*Set up host related info*/
 	ipcmem->toc_data.host_info->hwlock_owner = IPCMEM_INVALID_HOST;
 	ipcmem->toc_data.host_info->configured_host = enabled_hosts;
 
-	gmem_offset += IPCMEM_TOC_SIZE;
-	setup_global_partition(ipcmem, gmem_offset);
+	/* Update TOC with version entries for FW */
+	ipclite->ipcmem.toc->hdr.major_version = major_ver;
+	ipclite->ipcmem.toc->hdr.minor_version = minor_ver;
 
-	gmem_offset += GLOBAL_PARTITION_SIZE;
-	ret = setup_partitions(ipcmem, gmem_offset);
-	if (ret) {
-		IPCLITE_OS_LOG(IPCLITE_ERR, "Failed to set up partitions");
-		return ret;
-	}
+	/* Update the feature mask to TOC for FW */
+	ipcmem->toc->hdr.feature_mask = feature_mask;
 
 	/*Making sure all writes for ipcmem configurations are completed*/
 	wmb();
 
 	ipcmem->toc->hdr.init_done = IPCMEM_INIT_COMPLETED;
 	IPCLITE_OS_LOG(IPCLITE_DBG, "Ipcmem init completed\n");
+
+	/* Should be called after all Global TOC related init is done */
+	insert_magic_number();
 
 	return 0;
 }
@@ -997,6 +1114,7 @@ static struct ipcmem_partition_header *get_ipcmem_partition_hdr(struct ipclite_m
 								int remote_pid)
 {
 	uint32_t p = 0, found = -1;
+	uint32_t partitions = ipcmem.num_partitions;
 
 	for (p = 0; p < partitions; p++) {
 		if (ipcmem.toc_data.partition_entry[p].host0 == local_pid
@@ -1370,9 +1488,6 @@ static int ipclite_feature_setup(struct device_node *pn)
 	/* Combine feature_mask_low and feature_mask_high into 64-bit feature_mask */
 	feature_mask = (uint64_t) feature_mask_h << 32 | feature_mask_l;
 
-	/* Update the feature mask to TOC for FW */
-	ipclite->ipcmem.toc->hdr.feature_mask = feature_mask;
-
 	/* Set up Global Atomics Feature*/
 	if (!(IS_FEATURE_CONFIG(IPCLITE_GLOBAL_ATOMIC)))
 		IPCLITE_OS_LOG(IPCLITE_INFO, "IPCLite Global Atomic Support Disabled\n");
@@ -1380,6 +1495,10 @@ static int ipclite_feature_setup(struct device_node *pn)
 	/* Set up Test Suite Feature*/
 	if (!(IS_FEATURE_CONFIG(IPCLITE_TEST_SUITE)))
 		IPCLITE_OS_LOG(IPCLITE_INFO, "IPCLite Test Suite Disabled\n");
+
+	/* Set up ipclite atomic Feature*/
+	if (!(IS_FEATURE_CONFIG(IPCLITE_GLOBAL_LOCK)))
+		IPCLITE_OS_LOG(IPCLITE_INFO, "IPCLite Atomic Support Disabled\n");
 
 	return ret;
 }
@@ -1426,6 +1545,13 @@ static int ipclite_init_v0(struct platform_device *pdev)
 	/* Initializing Local Mutex Lock for SSR functionality */
 	mutex_init(&ssr_mutex);
 
+	/* Features Setup */
+	ret = ipclite_feature_setup(pn);
+	if (ret != 0) {
+		IPCLITE_OS_LOG(IPCLITE_ERR, "IPCLite Features Setup Failed\n");
+		goto release;
+	}
+
 	/* Map to IPCLite Memory */
 	ret = map_ipcmem(ipclite, "memory-region");
 	if (ret) {
@@ -1464,20 +1590,6 @@ static int ipclite_init_v0(struct platform_device *pdev)
 		IPCLITE_OS_LOG(IPCLITE_ERR, "IPCLite Debug Setup Failed\n");
 		goto release;
 	}
-
-	/* Features Setup */
-	ret = ipclite_feature_setup(pn);
-	if (ret != 0) {
-		IPCLITE_OS_LOG(IPCLITE_ERR, "IPCLite Features Setup Failed\n");
-		goto release;
-	}
-
-	/* Update TOC with version entries for FW */
-	ipclite->ipcmem.toc->hdr.major_version = major_ver;
-	ipclite->ipcmem.toc->hdr.minor_version = minor_ver;
-
-	/* Should be called after all Global TOC related init is done */
-	insert_magic_number();
 
 	IPCLITE_OS_LOG(IPCLITE_INFO, "IPCLite Version : %d.%d Feature Mask : 0x%llx\n",
 						major_ver, minor_ver, feature_mask);
@@ -1605,6 +1717,7 @@ static void ipclite_recover_v0(enum ipcmem_host_type core_id)
 {
 	int ret = 0, host = 0, host0 = 0, host1 = 0;
 	uint32_t p = 0;
+	uint32_t partitions = ipclite->ipcmem.num_partitions;
 
 	IPCLITE_OS_LOG(IPCLITE_DBG, "IPCLite Recover - Crashed Core : %d\n", core_id);
 

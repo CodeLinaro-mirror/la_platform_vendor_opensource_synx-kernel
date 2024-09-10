@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/hwspinlock.h>
@@ -41,22 +41,27 @@ static void synx_gmem_lock_owner_clear(u32 idx)
 static int synx_gmem_lock(u32 idx, unsigned long *flags)
 {
 	int rc;
+	if (get_ipclite_feature(IPCLITE_GLOBAL_LOCK))
+		rc = ipclite_global_spin_lock_timeout((idx & 0xFF), SYNX_HWSPIN_TIMEOUT, flags);
+	else {
+		if (!synx_hwlock)
+			return -SYNX_INVALID;
 
-	if (!synx_hwlock)
-		return -SYNX_INVALID;
-
-	rc = hwspin_lock_timeout_irqsave(
-		synx_hwlock, SYNX_HWSPIN_TIMEOUT, flags);
-	if (!rc)
-		synx_gmem_lock_owner_set(idx);
-
+		rc = hwspin_lock_timeout_irqsave(synx_hwlock, SYNX_HWSPIN_TIMEOUT, flags);
+		if (!rc)
+			synx_gmem_lock_owner_set(idx);
+	}
 	return rc;
 }
 
 static void synx_gmem_unlock(u32 idx, unsigned long *flags)
 {
-	synx_gmem_lock_owner_clear(idx);
-	hwspin_unlock_irqrestore(synx_hwlock, flags);
+	if (get_ipclite_feature(IPCLITE_GLOBAL_LOCK))
+		ipclite_global_spin_unlock(idx & 0xFF, flags);
+	else {
+		synx_gmem_lock_owner_clear(idx);
+		hwspin_unlock_irqrestore(synx_hwlock, flags);
+	}
 }
 
 static void synx_global_print_data(
@@ -152,10 +157,12 @@ static int synx_gmem_init(void)
 	if (!synx_gmem.table)
 		return -SYNX_NOMEM;
 
-	synx_hwlock = hwspin_lock_request_specific(SYNX_HWSPIN_ID);
-	if (!synx_hwlock) {
-		dprintk(SYNX_ERR, "hwspinlock request failed\n");
-		return -SYNX_NOMEM;
+	if (!get_ipclite_feature(IPCLITE_GLOBAL_LOCK)) {
+		synx_hwlock = hwspin_lock_request_specific(SYNX_HWSPIN_ID);
+		if (!synx_hwlock) {
+			dprintk(SYNX_ERR, "hwspinlock request failed\n");
+			return -SYNX_NOMEM;
+		}
 	}
 
 	/* zero idx not allocated for clients */
@@ -867,7 +874,10 @@ int synx_global_recover_interop(enum synx_core_id core_id,
 	ipclite_recover(synx_global_map_core_id(core_id));
 
 	/* recover synx gmem lock if it was owned by core in ssr */
-	if (synx_gmem_lock_owner(0) == core_id) {
+	if (get_ipclite_feature(IPCLITE_GLOBAL_LOCK)) {
+		for (int idx = 0; idx < IPCLITE_MAX_GLOBAL_LOCK; idx++)
+			ipclite_global_spin_bust(idx, synx_global_map_core_id(core_id));
+	} else if (synx_gmem_lock_owner(0) == core_id) {
 		synx_gmem_lock_owner_clear(0);
 		hwspin_unlock_raw(synx_hwlock);
 	}
@@ -987,7 +997,9 @@ int synx_global_recover_index(enum synx_core_id core_id, bool global_unlock,
 
 	// Incase if SOCCP might have taken hw_mutex before crash
 	/* recover synx gmem lock if it was owned by core in ssr */
-	if (global_unlock && synx_gmem_lock_owner(0) == core_id) {
+	if (get_ipclite_feature(IPCLITE_GLOBAL_LOCK) && global_unlock)
+		ipclite_global_spin_bust(idx, synx_global_map_core_id(core_id));
+	else if (global_unlock && synx_gmem_lock_owner(0) == core_id) {
 		synx_gmem_lock_owner_clear(0);
 		hwspin_unlock_raw(synx_hwlock);
 	}
