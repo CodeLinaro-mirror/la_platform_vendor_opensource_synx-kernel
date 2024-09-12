@@ -27,6 +27,7 @@ obj-m += synx/ipclite.o
 obj-m += synx-driver.o
 synx-driver-objs := synx/synx_v2.o synx/synx_global_v2.o synx/synx_util_v2.o synx/synx_debugfs_v2.o
 else
+obj-m += synx/ipclite.o
 obj-m += synx/qcom_ipc_lite.o
 obj-m += synx-driver.o
 synx-driver-objs := synx/synx.o synx/synx_util.o synx/synx_debugfs.o

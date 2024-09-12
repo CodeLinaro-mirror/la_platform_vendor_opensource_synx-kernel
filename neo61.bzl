@@ -7,6 +7,7 @@ def define_neo61():
         registry = synx_modules,
         modules = [
             "synx-driver",
+	    "ipclite",
             "qcom_ipc_lite",
         ],
         config_options = [

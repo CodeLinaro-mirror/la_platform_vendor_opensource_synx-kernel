@@ -31,6 +31,7 @@ LOCAL_MODULE_KO_DIRS := msm/synx-driver.ko
 ifeq ($(CONFIG_MSM_GLOBAL_SYNX_V2),true)
 LOCAL_MODULE_KO_DIRS += msm/synx/ipclite.ko
 else
+LOCAL_MODULE_KO_DIRS += msm/synx/ipclite.ko
 LOCAL_MODULE_KO_DIRS += msm/synx/qcom_ipc_lite.ko
 endif
 
@@ -68,6 +69,15 @@ LOCAL_SRC_FILES   := $(wildcard $(LOCAL_PATH)/**/*) $(wildcard $(LOCAL_PATH)/*)
 $(info LOCAL_SRC_FILES = $(LOCAL_SRC_FILES))
 LOCAL_MODULE      := qcom_ipc_lite.ko
 LOCAL_MODULE_KBUILD_NAME := msm/synx/qcom_ipc_lite.ko
+LOCAL_MODULE_PATH := $(KERNEL_MODULES_OUT)
+BOARD_VENDOR_KERNEL_MODULES += $(LOCAL_MODULE_PATH)/$(LOCAL_MODULE)
+include $(DLKM_DIR)/Build_external_kernelmodule.mk
+
+include $(CLEAR_VARS)
+LOCAL_SRC_FILES   := $(wildcard $(LOCAL_PATH)/**/*) $(wildcard $(LOCAL_PATH)/*)
+$(info LOCAL_SRC_FILES = $(LOCAL_SRC_FILES))
+LOCAL_MODULE      := ipclite.ko
+LOCAL_MODULE_KBUILD_NAME := msm/synx/ipclite.ko
 LOCAL_MODULE_PATH := $(KERNEL_MODULES_OUT)
 BOARD_VENDOR_KERNEL_MODULES += $(LOCAL_MODULE_PATH)/$(LOCAL_MODULE)
 include $(DLKM_DIR)/Build_external_kernelmodule.mk
