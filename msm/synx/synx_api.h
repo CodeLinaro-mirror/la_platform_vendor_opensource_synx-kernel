@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2019, 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef __SYNX_API_H__
@@ -90,6 +90,15 @@ enum synx_init_flags {
  * SYNX_IMPORT_EX_RELEASE   : Flag to inform relaxed invocation where release call
  *                            need not be called by client on this handle after import.
  *                            (NOT SUPPORTED)
+ * SYNX_IMPORT_REUSABLE     : Flag to inform that this synx handle supports repeated signaling.
+ *                            (NOT SUPPORTED)
+ *                            Client must pass:
+ *                            a. null ptr through fence variable to create reusable fence
+ *                            b. unsignaled synx handle through fence variable to import
+ *                               reusable fence
+ *                            If client passes SYNX_IMPORT_DMA_FENCE with SYNX_IMPORT_REUSABLE
+ *                            then synx_import returns a failure as reusable fence dosen't
+ *                            have native dma-fence support.
  */
 enum synx_import_flags {
 	SYNX_IMPORT_LOCAL_FENCE  = 0x01,
@@ -97,6 +106,7 @@ enum synx_import_flags {
 	SYNX_IMPORT_SYNX_FENCE   = 0x04,
 	SYNX_IMPORT_DMA_FENCE    = 0x08,
 	SYNX_IMPORT_EX_RELEASE   = 0x10,
+	SYNX_IMPORT_REUSABLE     = 0x20,
 };
 
 /**
