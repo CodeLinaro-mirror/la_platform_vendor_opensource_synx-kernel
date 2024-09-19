@@ -145,7 +145,8 @@ int synx_util_activate(struct synx_coredata *synx_obj);
 int synx_util_add_callback(struct synx_coredata *synx_obj, u32 h_synx);
 
 /* merge related helper functions */
-s32 synx_util_merge_error(struct synx_client *client, u32 *h_synxs, u32 num_objs);
+s32 synx_util_merge_error(struct synx_client *client, u32 *h_synxs, u32 num_objs,
+			struct synx_map_entry **map_list);
 int synx_util_validate_merge(struct synx_client *client, u32 *h_synxs, u32 num_objs,
 			struct dma_fence ***fences,
 			u32 *fence_cnt);

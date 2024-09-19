@@ -1205,13 +1205,14 @@ int synx_internal_merge(struct synx_session *session,
 	struct synx_merge_params *params)
 {
 	int rc = SYNX_SUCCESS, i, num_signaled = 0;
-	u32 count = 0, h_child, status = SYNX_STATE_ACTIVE;
+	u32 count = 0, h_child = 0, status = SYNX_STATE_ACTIVE;
 	u32 *h_child_list = NULL, *h_child_idx_list = NULL;
 	struct synx_client *client;
 	struct dma_fence **fences = NULL;
-	struct synx_map_entry *map_entry;
+	struct synx_map_entry *map_entry = NULL;
 	struct synx_coredata *synx_obj, *synx_obj_child;
 	struct synx_handle_coredata *synx_data_child;
+	struct synx_map_entry **map_entry_list = NULL;
 
 	if (IS_ERR_OR_NULL(session) || IS_ERR_OR_NULL(params))
 		return -SYNX_INVALID;
@@ -1239,10 +1240,17 @@ int synx_internal_merge(struct synx_session *session,
 			"[sess :%llu] merge validation failed\n",
 			client->id);
 		rc = -SYNX_INVALID;
-
 		kfree(synx_obj);
 		goto fail;
 	}
+
+	map_entry_list = kcalloc(count, sizeof(*map_entry_list), GFP_KERNEL);
+	if (IS_ERR_OR_NULL(map_entry_list)) {
+		kfree(synx_obj);
+		goto clean_up;
+	}
+
+	memset(map_entry_list, 0, count * sizeof(*map_entry_list));
 
 	rc = synx_util_init_group_coredata(synx_obj, fences,
 			params, count, client->dma_context);
@@ -1253,17 +1261,32 @@ int synx_internal_merge(struct synx_session *session,
 		goto clean_up;
 	}
 
+	for (i = 0; i < count; i++) {
+		h_child = synx_util_get_fence_entry((u64)fences[i], 1);
+		map_entry_list[i] = synx_util_get_map_entry(h_child);
+		if (IS_ERR_OR_NULL(map_entry_list[i]) ||
+			IS_ERR_OR_NULL(map_entry_list[i]->synx_obj)) {
+			dma_fence_put(synx_obj->fence);
+			goto clean_up;
+		}
+	}
+
 	map_entry = synx_util_insert_to_map(synx_obj,
 					*params->h_merged_obj, 0);
 	if (IS_ERR_OR_NULL(map_entry)) {
 		rc = PTR_ERR(map_entry);
-
+		for (i = 0; i < count; i++) {
+			if (IS_ERR_OR_NULL(map_entry_list[i]))
+				continue;
+			synx_util_release_map_entry(map_entry_list[i]);
+		}
 		/*
 		 * dma fence put will take care of removing the references taken
 		 * on child fences
 		 */
 		dma_fence_put(synx_obj->fence);
 		kfree(synx_obj);
+		kfree(map_entry_list);
 		goto fail;
 	}
 
@@ -1345,9 +1368,11 @@ int synx_internal_merge(struct synx_session *session,
 		synx_obj->fence);
 	kfree(h_child_list);
 	kfree(h_child_idx_list);
+	kfree(map_entry_list);
 	synx_put_client(client);
 	return SYNX_SUCCESS;
 clear:
+	kfree(map_entry_list);
 	synx_native_release_core(client, (*params->h_merged_obj));
 	synx_put_client(client);
 	return rc;
@@ -1359,13 +1384,15 @@ clean_up:
 	 */
 	if (IS_ERR_OR_NULL(map_entry)) {
 		kfree(synx_obj);
-		synx_util_merge_error(client, params->h_synxs, count);
+		synx_util_merge_error(client, params->h_synxs, count, map_entry_list);
 		if (params->num_objs && params->num_objs <= count)
 			kfree(fences);
 
 	} else {
 		synx_util_release_map_entry(map_entry);
 	}
+	if (!IS_ERR_OR_NULL(map_entry_list))
+		kfree(map_entry_list);
 fail:
 	synx_put_client(client);
 	return rc;

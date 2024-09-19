@@ -316,7 +316,7 @@ void synx_util_object_destroy(struct synx_coredata *synx_obj)
 {
 	int rc;
 	int num_dma_array = 0;
-	u32 i;
+	u32 i = 0;
 	s32 sync_id;
 	u32 type;
 	unsigned long flags;
@@ -324,6 +324,9 @@ void synx_util_object_destroy(struct synx_coredata *synx_obj)
 	struct synx_bind_desc *bind_desc;
 	struct bind_operations *bind_ops;
 	struct synx_external_data *data;
+	struct dma_fence_array *array = NULL;
+	u32 h_child = 0;
+	struct synx_map_entry *map_entry = NULL;
 
 	/* clear all the undispatched callbacks */
 	list_for_each_entry_safe(synx_cb,
@@ -378,6 +381,20 @@ void synx_util_object_destroy(struct synx_coredata *synx_obj)
 		kfree(data);
 	}
 
+	if (dma_fence_is_array(synx_obj->fence)) {
+		array = to_dma_fence_array(synx_obj->fence);
+		if (!IS_ERR_OR_NULL(array)) {
+			for (i = 0; i < array->num_fences; i++) {
+				h_child = synx_util_get_fence_entry((u64)array->fences[i], 1);
+				map_entry = synx_util_get_map_entry(h_child);
+				if (IS_ERR_OR_NULL(map_entry) ||
+					IS_ERR_OR_NULL(map_entry->synx_obj))
+					continue;
+				synx_util_release_map_entry(map_entry);
+				synx_util_release_map_entry(map_entry);
+			}
+		}
+	}
 	mutex_destroy(&synx_obj->obj_lock);
 	synx_util_release_fence_entry((u64)synx_obj->fence);
 
@@ -629,7 +646,8 @@ static u32 synx_util_remove_duplicates(struct dma_fence **arr, u32 num)
 
 s32 synx_util_merge_error(struct synx_client *client,
 	u32 *h_synxs,
-	u32 num_objs)
+	u32 num_objs,
+	struct synx_map_entry **map_list)
 {
 	u32 i = 0;
 	struct synx_handle_coredata *synx_data;
@@ -651,6 +669,9 @@ s32 synx_util_merge_error(struct synx_client *client,
 		/* release all references obtained during merge validatation */
 		synx_util_put_references(synx_obj);
 		synx_util_release_handle(synx_data);
+		if (IS_ERR_OR_NULL(map_list) || IS_ERR_OR_NULL(map_list[i]))
+			continue;
+		synx_util_release_map_entry(map_list[i]);
 	}
 
 	return 0;
