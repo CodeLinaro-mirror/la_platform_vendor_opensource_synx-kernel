@@ -3,7 +3,7 @@ load(":synx_module_build.bzl", "define_consolidate_perf_modules")
 
 def define_neo61():
     define_consolidate_perf_modules(
-        target = "neo_la",
+        target = "neo-la",
         registry = synx_modules,
         modules = [
             "synx-driver",
