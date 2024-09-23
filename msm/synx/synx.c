@@ -136,6 +136,7 @@ void *synx_internal_get_fence(struct synx_session *session,
 
 	mutex_lock(&synx_obj->obj_lock);
 	fence = synx_obj->fence;
+	dprintk(SYNX_VERB, "[sess :%llu], h_synx :%u, fence :%pK\n", client->id, h_synx, fence);
 	/* obtain an additional reference to the fence */
 	dma_fence_get(fence);
 	mutex_unlock(&synx_obj->obj_lock);
@@ -860,10 +861,14 @@ int synx_internal_signal(struct synx_session *session, u32 h_synx, enum synx_sig
 				h_synx, status);
 
 	rc = synx_native_signal_fence(synx_obj, status);
-	if (rc != SYNX_SUCCESS)
+	if (rc != SYNX_SUCCESS) {
 		dprintk(SYNX_ERR,
 			"[sess :%llu] signaling %u failed=%d\n",
 			client->id, h_synx, rc);
+	} else {
+		dprintk(SYNX_VERB,
+			"[sess :%llu] signaling %u success\n", client->id, h_synx);
+	}
 	mutex_unlock(&synx_obj->obj_lock);
 
 fail:
@@ -1147,7 +1152,7 @@ int synx_internal_cancel_async_wait(
 	}
 
 	status = SYNX_CALLBACK_RESULT_CANCELED;
-	/* remove all cb payloads mayching the deregister call */
+	/* remove all cb payloads matching the deregister call */
 	list_for_each_entry_safe(synx_cb, synx_cb_temp,
 			&synx_obj->reg_cbs_list, node) {
 		if (synx_cb->session != session) {
@@ -1198,8 +1203,16 @@ int synx_internal_cancel_async_wait(
 		}
 	}
 
-	if (!match_found)
+	if (!match_found) {
+		dprintk(SYNX_ERR,
+			"[sess :%llu], cb_payload match not found, h_synx :%u\n",
+			client->id, params->h_synx);
 		rc = -SYNX_INVALID;
+		goto release;
+	}
+	dprintk(SYNX_VERB,
+		"[sess :%llu], cancel async wait cb success, h_synx :%u\n",
+		client->id, params->h_synx);
 
 release:
 	mutex_unlock(&synx_obj->obj_lock);
@@ -1492,6 +1505,7 @@ int synx_internal_wait(struct synx_session *session,
 		rc = -ETIMEDOUT;
 		goto fail;
 	}
+	dprintk(SYNX_VERB, "[sess :%llu], wait unblocked. h_synx: %u\n", client->id, h_synx);
 
 	mutex_lock(&synx_obj->obj_lock);
 	rc = synx_util_get_object_status(synx_obj);
@@ -2676,8 +2690,7 @@ static long synx_ioctl(struct file *filep,
 		return -SYNX_INVALID;
 	}
 
-	dprintk(SYNX_VERB, "[sess :%llu] Enter cmd %u from pid %d\n",
-		(!IS_ERR_OR_NULL(session)? ((struct synx_client *)session)->id : -1),
+	dprintk(SYNX_VERB, "Enter cmd %u from pid %d\n",
 		k_ioctl.id, current->pid);
 
 	switch (k_ioctl.id) {
@@ -2741,9 +2754,7 @@ static long synx_ioctl(struct file *filep,
 		rc = -SYNX_INVALID;
 	}
 
-	dprintk(SYNX_VERB, "[sess :%llu] exit with status %d\n",
-		(!IS_ERR_OR_NULL(session)? ((struct synx_client *)session)->id : -1),
-		rc);
+	dprintk(SYNX_VERB, "exit with status %d\n", rc);
 
 	return rc;
 }
