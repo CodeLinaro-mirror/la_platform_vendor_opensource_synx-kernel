@@ -138,8 +138,10 @@ int synx_util_add_callback(struct synx_coredata *synx_obj,
 		return -SYNX_INVALID;
 
 	signal_cb = kzalloc(sizeof(*signal_cb), GFP_KERNEL);
-	if (IS_ERR_OR_NULL(signal_cb))
+	if (IS_ERR_OR_NULL(signal_cb)) {
+		dprintk(SYNX_ERR, "signal_cb allocation failed\n");
 		return -SYNX_NOMEM;
+	}
 
 	signal_cb->handle = h_synx;
 	signal_cb->flag = SYNX_SIGNAL_FROM_FENCE;
@@ -241,8 +243,10 @@ int synx_util_init_group_coredata(struct synx_coredata *synx_obj,
 
 	array = dma_fence_array_create(num_objs, fences,
 				dma_context, 1, false);
-	if (IS_ERR_OR_NULL(array))
+	if (IS_ERR_OR_NULL(array)) {
+		dprintk(SYNX_ERR, "dma fence array creation failed\n");
 		return -SYNX_INVALID;
+	}
 
 	synx_obj->fence = &array->base;
 	synx_obj->map_count = 1;
@@ -295,8 +299,10 @@ int synx_util_cleanup_merged_fence(struct synx_coredata *synx_obj, int status)
 
 	if (dma_fence_is_array(synx_obj->fence)) {
 		array = to_dma_fence_array(synx_obj->fence);
-		if (IS_ERR_OR_NULL(array))
+		if (IS_ERR_OR_NULL(array)) {
+			dprintk(SYNX_ERR, "dma fence array is invalid\n");
 			return -SYNX_INVALID;
+		}
 
 		for (i = 0; i < array->num_fences; i++) {
 			if (kref_read(&array->fences[i]->refcount) == 1 &&
@@ -512,8 +518,10 @@ int synx_util_init_handle(struct synx_client *client,
 		return -SYNX_INVALID;
 
 	synx_data = kzalloc(sizeof(*synx_data), GFP_ATOMIC);
-	if (IS_ERR_OR_NULL(synx_data))
+	if (IS_ERR_OR_NULL(synx_data)) {
+		dprintk(SYNX_ERR, "synx data allocation failed\n");
 		return -SYNX_NOMEM;
+	}
 
 	synx_data->client = client;
 	synx_data->synx_obj = synx_obj;
@@ -567,9 +575,10 @@ static u32 synx_util_get_references(struct synx_coredata *synx_obj)
 	/* obtain dma fence reference */
 	if (dma_fence_is_array(synx_obj->fence)) {
 		array = to_dma_fence_array(synx_obj->fence);
-		if (IS_ERR_OR_NULL(array))
+		if (IS_ERR_OR_NULL(array)) {
+			dprintk(SYNX_ERR, "invalid dma_fence_array\n");
 			return 0;
-
+		}
 		for (i = 0; i < array->num_fences; i++)
 			dma_fence_get(array->fences[i]);
 		count = array->num_fences;
@@ -588,8 +597,10 @@ static void synx_util_put_references(struct synx_coredata *synx_obj)
 
 	if (dma_fence_is_array(synx_obj->fence)) {
 		array = to_dma_fence_array(synx_obj->fence);
-		if (IS_ERR_OR_NULL(array))
+		if (IS_ERR_OR_NULL(array)) {
+			dprintk(SYNX_ERR, "invalid dma_fence_array\n");
 			return;
+		}
 
 		for (i = 0; i < array->num_fences; i++)
 			dma_fence_put(array->fences[i]);
@@ -607,8 +618,10 @@ static u32 synx_util_add_fence(struct synx_coredata *synx_obj,
 
 	if (dma_fence_is_array(synx_obj->fence)) {
 		array = to_dma_fence_array(synx_obj->fence);
-		if (IS_ERR_OR_NULL(array))
+		if (IS_ERR_OR_NULL(array)) {
+			dprintk(SYNX_ERR, "invalid dma_fence_array\n");
 			return 0;
+		}
 
 		for (i = 0; i < array->num_fences; i++)
 			fences[idx+i] = array->fences[i];
@@ -687,12 +700,15 @@ int synx_util_validate_merge(struct synx_client *client,
 	}
 
 	synx_datas = kcalloc(num_objs, sizeof(*synx_datas), GFP_KERNEL);
-	if (IS_ERR_OR_NULL(synx_datas))
+	if (IS_ERR_OR_NULL(synx_datas)) {
+		dprintk(SYNX_ERR, "synx_datas allocation failed\n");
 		return -SYNX_NOMEM;
+	}
 
 	synx_objs = kcalloc(num_objs, sizeof(*synx_objs), GFP_KERNEL);
 	if (IS_ERR_OR_NULL(synx_objs)) {
 		kfree(synx_datas);
+		dprintk(SYNX_ERR, "synx_objs allocation failed\n");
 		return -SYNX_NOMEM;
 	}
 
@@ -799,8 +815,10 @@ static u32 __fence_group_state(struct dma_fence *fence, bool locked)
 
 	actv_cnt = sig_cnt = err_cnt = 0;
 	array = to_dma_fence_array(fence);
-	if (IS_ERR_OR_NULL(array))
+	if (IS_ERR_OR_NULL(array)) {
+		dprintk(SYNX_ERR, "invalid dma_fence_array %pK\n", fence);
 		return SYNX_STATE_INVALID;
+	}
 
 	for (i = 0; i < array->num_fences; i++) {
 		intr = __fence_state(array->fences[i], locked);
@@ -899,8 +917,10 @@ struct synx_map_entry *synx_util_insert_to_map(
 	struct synx_map_entry *curr;
 
 	map_entry = kzalloc(sizeof(*map_entry), GFP_KERNEL);
-	if (IS_ERR_OR_NULL(map_entry))
+	if (IS_ERR_OR_NULL(map_entry)) {
+		dprintk(SYNX_ERR, "map_entry allocation failed\n");
 		return ERR_PTR(-SYNX_NOMEM);
+	}
 
 	kref_init(&map_entry->refcount);
 	map_entry->synx_obj = synx_obj;
@@ -971,8 +991,10 @@ struct synx_map_entry *synx_util_get_map_entry(u32 h_synx)
 	struct synx_map_entry *curr;
 	struct synx_map_entry *map_entry = ERR_PTR(-SYNX_NOENT);
 
-	if (h_synx == 0)
+	if (h_synx == 0) {
+		dprintk(SYNX_ERR, "invalid h_synx\n");
 		return ERR_PTR(-SYNX_INVALID);
+	}
 
 	if (synx_util_is_global_handle(h_synx)) {
 		spin_lock_bh(&synx_dev->native->global_map_lock);
@@ -1152,12 +1174,16 @@ void synx_util_release_handle(struct synx_handle_coredata *synx_data)
 {
 	struct synx_client *client;
 
-	if (IS_ERR_OR_NULL(synx_data))
+	if (IS_ERR_OR_NULL(synx_data)) {
+		dprintk(SYNX_ERR, "invalid synx_data\n");
 		return;
+	}
 
 	client = synx_data->client;
-	if (IS_ERR_OR_NULL(client))
+	if (IS_ERR_OR_NULL(client)) {
+		dprintk(SYNX_ERR, "invalid client\n");
 		return;
+	}
 
 	spin_lock_bh(&client->handle_map_lock);
 	kref_put(&synx_data->refcount,
@@ -1364,11 +1390,15 @@ int synx_get_child_coredata(struct synx_coredata *synx_obj, struct synx_coredata
 		return -SYNX_INVALID;
 	if (dma_fence_is_array(synx_obj->fence)) {
 		array = to_dma_fence_array(synx_obj->fence);
-		if (IS_ERR_OR_NULL(array))
+		if (IS_ERR_OR_NULL(array)) {
+			dprintk(SYNX_ERR, "invalid dma_fence_array\n");
 			return -SYNX_INVALID;
+		}
 		synx_datas = kcalloc(array->num_fences, sizeof(*synx_datas), GFP_KERNEL);
-		if (IS_ERR_OR_NULL(synx_datas))
+		if (IS_ERR_OR_NULL(synx_datas)) {
+			dprintk(SYNX_ERR, "synx_datas allocation failed\n");
 			return -SYNX_NOMEM;
+		}
 
 		for (i = 0; i < array->num_fences; i++) {
 			h_child = synx_util_get_fence_entry((u64)array->fences[i], 1);
@@ -1546,8 +1576,10 @@ void synx_client_destroy(struct kref *kref)
 
 void synx_put_client(struct synx_client *client)
 {
-	if (IS_ERR_OR_NULL(client))
+	if (IS_ERR_OR_NULL(client)) {
+		dprintk(SYNX_ERR, "invalid client\n");
 		return;
+	}
 
 	spin_lock_bh(&synx_dev->native->metadata_map_lock);
 	kref_put(&client->refcount, synx_client_destroy);

@@ -91,8 +91,10 @@ static int synx_create_sync_fd(struct dma_fence *fence)
 	int fd;
 	struct sync_file *sync_file;
 
-	if (IS_ERR_OR_NULL(fence))
+	if (IS_ERR_OR_NULL(fence)) {
+		dprintk(SYNX_ERR, "invalid fence\n");
 		return -SYNX_INVALID;
+	}
 
 	fd = get_unused_fd_flags(O_CLOEXEC);
 	if (fd < 0)
@@ -121,8 +123,10 @@ void *synx_internal_get_fence(struct synx_session *session,
 	struct dma_fence *fence = NULL;
 
 	client = synx_get_client(session);
-	if (IS_ERR_OR_NULL(client))
+	if (IS_ERR_OR_NULL(client)) {
+		dprintk(SYNX_ERR, "invalid client\n");
 		return NULL;
+	}
 
 	synx_data = synx_util_acquire_handle(client, h_synx);
 	synx_obj = synx_util_obtain_object(synx_data);
@@ -205,8 +209,10 @@ static int synx_native_create_core(struct synx_client *client,
 		map_entry_can_exist = true;
 
 	synx_obj = kzalloc(sizeof(*synx_obj), GFP_KERNEL);
-	if (IS_ERR_OR_NULL(synx_obj))
+	if (IS_ERR_OR_NULL(synx_obj)) {
+		dprintk(SYNX_ERR, "synx_obj allocation failed\n");
 		return -SYNX_NOMEM;
+	}
 
 	rc = synx_util_init_coredata(synx_obj, params,
 			&synx_fence_ops, client->dma_context);
@@ -273,8 +279,10 @@ int synx_internal_create(struct synx_session *session,
 	}
 
 	client = synx_get_client(session);
-	if (IS_ERR_OR_NULL(client))
+	if (IS_ERR_OR_NULL(client)) {
+		dprintk(SYNX_ERR, "invalid client\n");
 		return -SYNX_INVALID;
+	}
 
 	*params->h_synx = 0;
 
@@ -812,8 +820,10 @@ int synx_internal_signal(struct synx_session *session, u32 h_synx, enum synx_sig
 	struct synx_coredata *synx_obj;
 
 	client = synx_get_client(session);
-	if (IS_ERR_OR_NULL(client))
+	if (IS_ERR_OR_NULL(client)) {
+		dprintk(SYNX_ERR, "invalid client\n");
 		return -SYNX_INVALID;
+	}
 
 	if (status <= SYNX_STATE_ACTIVE ||
 			!(status == SYNX_STATE_SIGNALED_SUCCESS ||
@@ -882,8 +892,10 @@ static int synx_match_payload(struct synx_kernel_payload *cb_payload,
 {
 	int rc = 0;
 
-	if (IS_ERR_OR_NULL(cb_payload) || IS_ERR_OR_NULL(payload))
+	if (IS_ERR_OR_NULL(cb_payload) || IS_ERR_OR_NULL(payload)) {
+		dprintk(SYNX_ERR, "invalid cb_payload\n");
 		return -SYNX_INVALID;
+	}
 
 	if ((cb_payload->cb_func == payload->cb_func) &&
 			(cb_payload->data == payload->data)) {
@@ -1010,8 +1022,10 @@ int synx_internal_async_wait(struct synx_session *session,
 		return -SYNX_INVALID;
 
 	client = synx_get_client(session);
-	if (IS_ERR_OR_NULL(client))
+	if (IS_ERR_OR_NULL(client)) {
+		dprintk(SYNX_ERR, "invalid client\n");
 		return -SYNX_INVALID;
+	}
 
 	synx_data = synx_util_acquire_handle(client, params->h_synx);
 	synx_obj = synx_util_obtain_object(synx_data);
@@ -1117,8 +1131,10 @@ int synx_internal_cancel_async_wait(
 		return -SYNX_INVALID;
 
 	client = synx_get_client(session);
-	if (IS_ERR_OR_NULL(client))
+	if (IS_ERR_OR_NULL(client)) {
+		dprintk(SYNX_ERR, "invalid client\n");
 		return -SYNX_INVALID;
+	}
 
 	synx_data = synx_util_acquire_handle(client, params->h_synx);
 	synx_obj = synx_util_obtain_object(synx_data);
@@ -1245,11 +1261,14 @@ int synx_internal_merge(struct synx_session *session,
 	}
 
 	client = synx_get_client(session);
-	if (IS_ERR_OR_NULL(client))
+	if (IS_ERR_OR_NULL(client)) {
+		dprintk(SYNX_ERR, "invalid client\n");
 		return -SYNX_INVALID;
+	}
 
 	synx_obj = kzalloc(sizeof(*synx_obj), GFP_KERNEL);
 	if (IS_ERR_OR_NULL(synx_obj)) {
+		dprintk(SYNX_ERR, "synx_obj allocation failed\n");
 		rc = -SYNX_NOMEM;
 		goto fail;
 	}
@@ -1266,8 +1285,10 @@ int synx_internal_merge(struct synx_session *session,
 	}
 
 	map_entry_list = kcalloc(count, sizeof(*map_entry_list), GFP_KERNEL);
-	if (IS_ERR_OR_NULL(map_entry_list))
+	if (IS_ERR_OR_NULL(map_entry_list)) {
+		dprintk(SYNX_ERR, "map_entry_list allocation failed\n");
 		goto clean_up;
+	}
 
 	memset(map_entry_list, 0, count * sizeof(*map_entry_list));
 
@@ -1321,12 +1342,14 @@ int synx_internal_merge(struct synx_session *session,
 
 	h_child_list = kzalloc(count*4, GFP_KERNEL);
 	if (IS_ERR_OR_NULL(h_child_list)) {
+		dprintk(SYNX_ERR, "h_child_list allocation failed\n");
 		rc = -SYNX_NOMEM;
 		goto clear;
 	}
 
 	h_child_idx_list = kzalloc(count*4, GFP_KERNEL);
 	if (IS_ERR_OR_NULL(h_child_idx_list)) {
+		dprintk(SYNX_ERR, "h_child_idx_list allocation failed\n");
 		kfree(h_child_list);
 		rc = -SYNX_NOMEM;
 		goto clear;
@@ -1444,8 +1467,10 @@ int synx_internal_release(struct synx_session *session, u32 h_synx)
 	struct synx_client *client;
 
 	client = synx_get_client(session);
-	if (IS_ERR_OR_NULL(client))
+	if (IS_ERR_OR_NULL(client)) {
+		dprintk(SYNX_ERR, "invalid client\n");
 		return -SYNX_INVALID;
+	}
 
 	rc = synx_native_release_core(client, h_synx);
 
@@ -1463,8 +1488,10 @@ int synx_internal_wait(struct synx_session *session,
 	struct synx_coredata *synx_obj;
 
 	client = synx_get_client(session);
-	if (IS_ERR_OR_NULL(client))
+	if (IS_ERR_OR_NULL(client)) {
+		dprintk(SYNX_ERR, "invalid client\n");
 		return -SYNX_INVALID;
+	}
 
 	synx_data = synx_util_acquire_handle(client, h_synx);
 	synx_obj = synx_util_obtain_object(synx_data);
@@ -1524,8 +1551,10 @@ int synx_bind(struct synx_session *session,
 	struct bind_operations *bind_ops = NULL;
 
 	client = synx_get_client(session);
-	if (IS_ERR_OR_NULL(client))
+	if (IS_ERR_OR_NULL(client)) {
+		dprintk(SYNX_ERR, "invalid client\n");
 		return -SYNX_INVALID;
+	}
 
 	synx_data = synx_util_acquire_handle(client, h_synx);
 	synx_obj = synx_util_obtain_object(synx_data);
@@ -1638,8 +1667,10 @@ int synx_internal_get_status(struct synx_session *session,
 	struct synx_coredata *synx_obj;
 
 	client = synx_get_client(session);
-	if (IS_ERR_OR_NULL(client))
+	if (IS_ERR_OR_NULL(client)) {
+		dprintk(SYNX_ERR, "invalid client\n");
 		return -SYNX_INVALID;
+	}
 
 	synx_data = synx_util_acquire_handle(client, h_synx);
 	synx_obj = synx_util_obtain_object(synx_data);
@@ -1750,8 +1781,10 @@ static int synx_native_import_handle(struct synx_client *client,
 
 	if (IS_ERR_OR_NULL(client) || IS_ERR_OR_NULL(params) ||
 		IS_ERR_OR_NULL(params->fence) ||
-		IS_ERR_OR_NULL(params->new_h_synx))
+		IS_ERR_OR_NULL(params->new_h_synx)) {
+		dprintk(SYNX_ERR, "invalid client and params\n");
 		return -SYNX_INVALID;
+		}
 
 	h_synx = *((u32 *)params->fence);
 
@@ -1887,8 +1920,10 @@ static int synx_register_hw_fence(struct synx_client *client,
 
 	if (IS_ERR_OR_NULL(client) || IS_ERR_OR_NULL(params) ||
 		IS_ERR_OR_NULL(params->new_h_synx) ||
-		IS_ERR_OR_NULL(hwfence_shared_ops.share_handle_status))
+		IS_ERR_OR_NULL(hwfence_shared_ops.share_handle_status)) {
+		dprintk(SYNX_ERR, "invalid params\n");
 		return -SYNX_INVALID;
+	}
 
 	h_synx = *params->new_h_synx;
 	rc = hwfence_shared_ops.share_handle_status(
@@ -2201,8 +2236,10 @@ int synx_internal_import(struct synx_session *session,
 	}
 
 	client = synx_get_client(session);
-	if (IS_ERR_OR_NULL(client))
+	if (IS_ERR_OR_NULL(client)) {
+		dprintk(SYNX_ERR, "invalid client\n");
 		return -SYNX_INVALID;
+	}
 
 	/* import fence based on its type */
 	if (params->type == SYNX_IMPORT_ARR_PARAMS)
@@ -2463,8 +2500,10 @@ static int synx_handle_merge(struct synx_private_ioctl_arg *k_ioctl,
 
 	h_synxs = kcalloc(merge_info.num_objs,
 				sizeof(*h_synxs), GFP_KERNEL);
-	if (IS_ERR_OR_NULL(h_synxs))
+	if (IS_ERR_OR_NULL(h_synxs)) {
+		dprintk(SYNX_ERR, "h_synxs allocation failed\n");
 		return -ENOMEM;
+	}
 
 	if (copy_from_user(h_synxs,
 			u64_to_user_ptr(merge_info.synx_objs),
@@ -2768,8 +2807,10 @@ static ssize_t synx_read(struct file *filep,
 	}
 
 	client = synx_get_client(session);
-	if (IS_ERR_OR_NULL(client))
+	if (IS_ERR_OR_NULL(client)) {
+		dprintk(SYNX_ERR, "invalid client\n");
 		return -SYNX_INVALID;
+	}
 
 	mutex_lock(&client->event_q_lock);
 	cb = list_first_entry_or_null(&client->event_q,
@@ -2847,8 +2888,10 @@ struct synx_session *synx_internal_initialize(
 		return ERR_PTR(-SYNX_NOSUPPORT);
 
 	client = vzalloc(sizeof(*client));
-	if (IS_ERR_OR_NULL(client))
+	if (IS_ERR_OR_NULL(client)) {
+		dprintk(SYNX_ERR, "client allocation failed\n");
 		return ERR_PTR(-SYNX_NOMEM);
+	}
 
 	if (params->name)
 		strscpy(client->name, params->name, sizeof(client->name));
@@ -3034,8 +3077,10 @@ int synx_ipc_callback(u32 client_id,
 	u32 handle = (u32)(data >> 32);
 
 	signal_cb = kzalloc(sizeof(*signal_cb), GFP_ATOMIC);
-	if (IS_ERR_OR_NULL(signal_cb))
+	if (IS_ERR_OR_NULL(signal_cb)) {
+		dprintk(SYNX_ERR, "signal_cb allocation failed\n");
 		return -SYNX_NOMEM;
+	}
 
 	dprintk(SYNX_DBG,
 		"signal notification for %u received with status %u\n",
@@ -3193,8 +3238,10 @@ static int __init synx_init(void)
 	dprintk(SYNX_INFO, "device initialization start\n");
 
 	synx_dev = kzalloc(sizeof(*synx_dev), GFP_KERNEL);
-	if (IS_ERR_OR_NULL(synx_dev))
+	if (IS_ERR_OR_NULL(synx_dev)) {
+		dprintk(SYNX_ERR, "synx_dev allocation failed\n");
 		return -SYNX_NOMEM;
+	}
 
 	rc = alloc_chrdev_region(&synx_dev->dev, 0, 1, SYNX_DEVICE_NAME);
 	if (rc < 0) {
