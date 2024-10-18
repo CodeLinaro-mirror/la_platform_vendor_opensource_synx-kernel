@@ -645,36 +645,25 @@ static u32 synx_util_remove_duplicates(struct dma_fence **arr, u32 num)
 }
 
 s32 synx_util_merge_error(struct synx_client *client,
-	u32 *h_synxs,
-	u32 num_objs,
+	struct dma_fence **fences,
+	u32 fence_count,
 	struct synx_map_entry **map_list)
 {
 	u32 i = 0;
-	struct synx_handle_coredata *synx_data;
-	struct synx_coredata *synx_obj;
 
-	if (IS_ERR_OR_NULL(client) || IS_ERR_OR_NULL(h_synxs))
+	if (IS_ERR_OR_NULL(fences))
 		return -SYNX_INVALID;
 
-	for (i = 0; i < num_objs; i++) {
-		synx_data = synx_util_acquire_handle(client, h_synxs[i]);
-		synx_obj = synx_util_obtain_object(synx_data);
-		if (IS_ERR_OR_NULL(synx_obj) ||
-			IS_ERR_OR_NULL(synx_obj->fence)) {
-			dprintk(SYNX_ERR,
-				"[sess :%llu] invalid handle %d in cleanup\n",
-				client->id, h_synxs[i]);
+	for (i = 0; i < fence_count; i++) {
+		if (IS_ERR_OR_NULL(fences[i]))
 			continue;
-		}
-		/* release all references obtained during merge validatation */
-		synx_util_put_references(synx_obj);
-		synx_util_release_handle(synx_data);
+
+		dma_fence_put(fences[i]);
 		if (IS_ERR_OR_NULL(map_list) || IS_ERR_OR_NULL(map_list[i]))
 			continue;
 		synx_util_release_map_entry(map_list[i]);
 	}
-
-	return 0;
+	return SYNX_SUCCESS;
 }
 
 int synx_util_validate_merge(struct synx_client *client,

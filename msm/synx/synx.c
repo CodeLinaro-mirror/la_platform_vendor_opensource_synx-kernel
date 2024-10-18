@@ -1386,7 +1386,7 @@ clean_up:
 	 */
 	if (IS_ERR_OR_NULL(map_entry)) {
 		kfree(synx_obj);
-		synx_util_merge_error(client, params->h_synxs, count, map_entry_list);
+		synx_util_merge_error(client, fences, count, map_entry_list);
 		if (params->num_objs && params->num_objs <= count)
 			kfree(fences);
 
