@@ -1162,7 +1162,6 @@ static void ping_callback(int test_info, int t_id, int payload_info, int start_s
 		reply_macro = get_test_macro(test_info, t_id,
 						PING_REPLY, 0, 0);
 		ipclite_test_msg_send(client_id, reply_macro);
-
 	}
 	if (payload_info == PING_REPLY) {
 		if (test_info == PING)
@@ -1321,8 +1320,7 @@ static int ipclite_test_sysfs_node_setup(void)
 
 	ret = sysfs_create_file(sysfs_dir, &ipclite_test_params.attr);
 	if (ret) {
-		pr_err("Cannot create sysfs file for ipclite test module. Error - %d\n",
-			ret);
+		pr_err("cannot create sysfs file. Error - %d\n", ret);
 		return -ENOENT;
 	}
 	return 0;

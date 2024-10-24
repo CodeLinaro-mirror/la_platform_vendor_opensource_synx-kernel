@@ -51,25 +51,21 @@
 
 /* debug related entries */
 #define IPCLITE_DEBUG_INFO_SIZE		256
-#define IPCLITE_CORE_DBG_LABEL		"APSS:"
 #define IPCLITE_LOG_MSG_SIZE		100
 #define IPCLITE_LOG_BUF_SIZE		512
-#define IPCLITE_DBG_LABEL_SIZE		5
 #define IPCLITE_SIGNAL_LABEL_SIZE	10
 #define PREV_INDEX					2
 
 #define ADD_OFFSET(x, y)	((void *)((size_t)x + y))
 
 /* IPCLite Logging Mechanism */
-#define IPCLITE_OS_LOG(__level, __fmt, arg...) \
+#define IPCLITE_LOG(__level, __fmt, arg...) \
 	do { \
-		if (ipclite_debug_level & __level) { \
-			if (ipclite_debug_control & IPCLITE_DMESG_LOG) \
-				pr_info(IPCLITE_CORE_DBG_LABEL "%s:"__fmt, \
-							ipclite_dbg_label[__level], ## arg); \
+		if (ipclite_debug_level & IPCLITE_##__level) { \
+			if (ipclite_debug_control & IPCLITE_OS_LOG) \
+				pr_info("%s:"__fmt, #__level, ## arg); \
 			if (ipclite_debug_control & IPCLITE_INMEM_LOG) \
-				ipclite_inmem_log(IPCLITE_CORE_DBG_LABEL "%s:"__fmt, \
-							ipclite_dbg_label[__level], ## arg); \
+				ipclite_inmem_log("APPS:%s:"__fmt, #__level, ## arg); \
 		} \
 	} while (0)
 
@@ -113,11 +109,12 @@ enum ipclite_debug_level {
 	IPCLITE_ERR  = 0x0001,
 	IPCLITE_WARN = 0x0002,
 	IPCLITE_INFO = 0x0004,
-	IPCLITE_DBG  = 0x0008,
+	IPCLITE_MED  = 0x0008,
+	IPCLITE_LOW  = 0x0010,
 };
 
 enum ipclite_debug_control {
-	IPCLITE_DMESG_LOG = 0x0001,
+	IPCLITE_OS_LOG = 0x0001,
 	IPCLITE_DBG_STRUCT = 0x0002,
 	IPCLITE_INMEM_LOG = 0x0004,
 };
@@ -126,13 +123,6 @@ enum ipclite_debug_dump {
 	IPCLITE_DUMP_DBG_STRUCT = 0x0001,
 	IPCLITE_DUMP_INMEM_LOG = 0x0002,
 	IPCLITE_DUMP_SSR = 0x0004,
-};
-
-static const char ipclite_dbg_label[][IPCLITE_DBG_LABEL_SIZE] = {
-	[IPCLITE_ERR] = "err",
-	[IPCLITE_WARN] = "warn",
-	[IPCLITE_INFO] = "info",
-	[IPCLITE_DBG] = "dbg"
 };
 
 /**
