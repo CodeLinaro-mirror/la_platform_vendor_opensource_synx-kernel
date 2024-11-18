@@ -2296,13 +2296,13 @@ static struct synx_map_entry *synx_handle_conversion(
 	BUG_ON(synx_obj == NULL);
 
 	mutex_lock(&synx_obj->obj_lock);
-	synx_util_get_object(synx_obj);
 	if (synx_obj->global_idx != 0) {
 		*h_synx = synx_encode_handle(
 				synx_obj->global_idx, SYNX_CORE_APSS, true);
 
 		map_entry = synx_util_get_map_entry(*h_synx);
 		if (IS_ERR_OR_NULL(map_entry)) {
+			synx_util_get_object(synx_obj);
 			/* raced with release from last global client */
 			map_entry = synx_util_insert_to_map(synx_obj,
 						*h_synx, 0,
@@ -2312,9 +2312,11 @@ static struct synx_map_entry *synx_handle_conversion(
 				dprintk(SYNX_ERR,
 					"addition of %u to map failed=%d",
 					*h_synx, rc);
+				synx_util_put_object(synx_obj);
 			}
 		}
 	} else {
+		synx_util_get_object(synx_obj);
 		synx_obj->map_count++;
 
 		rc = synx_alloc_global_handle(h_synx, security_key);
@@ -2333,13 +2335,11 @@ static struct synx_map_entry *synx_handle_conversion(
 				dprintk(SYNX_ERR,
 					"insertion of %u to map failed=%d",
 					*h_synx, rc);
+				synx_util_put_object(synx_obj);
 			}
 		}
 	}
 	mutex_unlock(&synx_obj->obj_lock);
-
-	if (IS_ERR_OR_NULL(map_entry))
-		synx_util_put_object(synx_obj);
 
 	synx_util_release_map_entry(old_entry);
 	return map_entry;
