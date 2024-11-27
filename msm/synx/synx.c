@@ -1856,7 +1856,8 @@ static int synx_internal_get_handle_status(struct synx_import_indv_params *param
 		goto bail;
 	}
 
-	*params->new_h_synx = h_synx;
+	if (is_waiter)
+		*params->new_h_synx = h_synx;
 
 bail:
 	*signal_status = status;
