@@ -96,6 +96,9 @@ struct synx_shared_mem {
 	struct synx_global_coredata *table;
 };
 
+// Forward declaring this structure which will be found in synx_interop.h
+struct synx_hwfence_interops;
+
 static inline bool synx_is_valid_idx(u32 idx)
 {
 	if (idx < SYNX_GLOBAL_MAX_OBJS)
@@ -334,4 +337,33 @@ int synx_global_test_status_update_coredata(u32 idx,
 /* Function to fetch global shared memory entry */
 bool synx_fetch_global_shared_memory_handle_details(u32 synx_handle,
 	struct synx_global_coredata *synx_global_entry);
+
+/**
+ * synx_global_recover_index - Recover handle subscribed by specific core
+ *
+ * In case of any hw-fence client SSR, the core_id will be SOCCP.
+ *
+ * @param core_id       : Crashed core id
+ * @param global_unlock : Check if global hw lock has to be unlocked
+ * @param idx           : Global entry index
+ * @param status        : Signaling status
+ *
+ * @return SYNX_SUCCESS on success. Negative error on failure.
+ */
+int synx_global_recover_index(enum synx_core_id core_id, bool global_unlock,
+	u32 idx, u32 status);
+
+/**
+ * synx_global_recover_interop - Recover handles subscribed by specific core
+ *
+ * In case of synx producer fences, synx_hwfence_signal_fence has to be called
+ * to notify hwfence consumer about SSR status.
+ *
+ * @param core_id            : Crashed core id
+ * @param hwfence_shared_ops : Internal ops used by hw-fence and synx drivers
+ *
+ * @return SYNX_SUCCESS on success. Negative error on failure.
+ */
+int synx_global_recover_interop(enum synx_core_id core_id,
+	struct synx_hwfence_interops *hwfence_shared_ops);
 #endif /* __SYNX_SHARED_MEM_H__ */
