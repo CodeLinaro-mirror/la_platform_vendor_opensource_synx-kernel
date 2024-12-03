@@ -101,7 +101,7 @@ struct synx_hwfence_interops;
 
 static inline bool synx_is_valid_idx(u32 idx)
 {
-	if (idx < SYNX_GLOBAL_MAX_OBJS)
+	if (idx != 0 && idx < SYNX_GLOBAL_MAX_OBJS)
 		return true;
 	return false;
 }
