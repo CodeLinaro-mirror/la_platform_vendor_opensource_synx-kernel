@@ -889,9 +889,11 @@ struct synx_handle_coredata *synx_util_acquire_handle(
 
 struct synx_map_entry *synx_util_insert_to_map(
 	struct synx_coredata *synx_obj,
-	u32 h_synx, u32 flags)
+	u32 h_synx, u32 flags,
+	bool map_entry_can_exist)
 {
 	struct synx_map_entry *map_entry;
+	struct synx_map_entry *curr;
 
 	map_entry = kzalloc(sizeof(*map_entry), GFP_KERNEL);
 	if (IS_ERR_OR_NULL(map_entry))
@@ -904,6 +906,25 @@ struct synx_map_entry *synx_util_insert_to_map(
 
 	if (synx_util_is_global_handle(h_synx)) {
 		spin_lock_bh(&synx_dev->native->global_map_lock);
+		hash_for_each_possible(synx_dev->native->global_map,
+			curr, node, h_synx) {
+			if (curr->key == h_synx && map_entry_can_exist) {
+				kref_get(&curr->refcount);
+				synx_util_put_object(synx_obj);
+				kfree(map_entry);
+				spin_unlock_bh(&synx_dev->native->global_map_lock);
+				dprintk(SYNX_MEM,
+					"map entry %pK already found h_synx %u\n",
+					curr, h_synx);
+				return curr;
+			} else if (curr->key == h_synx && !map_entry_can_exist) {
+				kfree(map_entry);
+				spin_unlock_bh(&synx_dev->native->global_map_lock);
+				dprintk(SYNX_ERR, "map entry %pK already exists h_synx %u\n",
+						curr, h_synx);
+				return ERR_PTR(-SYNX_INVALID);
+			}
+		}
 		hash_add(synx_dev->native->global_map,
 			&map_entry->node, h_synx);
 		spin_unlock_bh(&synx_dev->native->global_map_lock);
@@ -912,6 +933,25 @@ struct synx_map_entry *synx_util_insert_to_map(
 			h_synx, map_entry);
 	} else {
 		spin_lock_bh(&synx_dev->native->local_map_lock);
+		hash_for_each_possible(synx_dev->native->local_map,
+			curr, node, h_synx) {
+			if (curr->key == h_synx && map_entry_can_exist) {
+				kref_get(&curr->refcount);
+				synx_util_put_object(synx_obj);
+				kfree(map_entry);
+				spin_unlock_bh(&synx_dev->native->local_map_lock);
+				dprintk(SYNX_MEM,
+					"map entry %pK already found: h_synx %u\n",
+					curr, h_synx);
+				return curr;
+			} else if (curr->key == h_synx && !map_entry_can_exist) {
+				kfree(map_entry);
+				spin_unlock_bh(&synx_dev->native->local_map_lock);
+				dprintk(SYNX_ERR, "map entry %pK already exists h_synx %u\n",
+						curr, h_synx);
+				return ERR_PTR(-SYNX_INVALID);
+			}
+		}
 		hash_add(synx_dev->native->local_map,
 			&map_entry->node, h_synx);
 		spin_unlock_bh(&synx_dev->native->local_map_lock);

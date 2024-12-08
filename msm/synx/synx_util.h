@@ -99,7 +99,7 @@ static inline struct synx_coredata *synx_util_obtain_object(
 
 /* global/local map functions */
 struct synx_map_entry *synx_util_insert_to_map(struct synx_coredata *synx_obj,
-			u32 h_synx, u32 flags);
+			u32 h_synx, u32 flags, bool map_entry_can_exist);
 struct synx_map_entry *synx_util_get_map_entry(u32 h_synx);
 void synx_util_release_map_entry(struct synx_map_entry *map_entry);
 void synx_util_destroy_map_entry(struct kref *kref);

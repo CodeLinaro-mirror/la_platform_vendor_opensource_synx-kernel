@@ -194,10 +194,14 @@ static int synx_native_create_core(struct synx_client *client,
 	int rc;
 	struct synx_coredata *synx_obj;
 	struct synx_map_entry *map_entry;
+	bool map_entry_can_exist = false;
 
 	if (IS_ERR_OR_NULL(client) || IS_ERR_OR_NULL(params) ||
 		IS_ERR_OR_NULL(params->h_synx))
 		return -SYNX_INVALID;
+
+	if (*params->h_synx != 0)
+		map_entry_can_exist = true;
 
 	synx_obj = kzalloc(sizeof(*synx_obj), GFP_KERNEL);
 	if (IS_ERR_OR_NULL(synx_obj))
@@ -214,20 +218,21 @@ static int synx_native_create_core(struct synx_client *client,
 	}
 
 	map_entry = synx_util_insert_to_map(synx_obj,
-					*params->h_synx, 0);
+					*params->h_synx, 0,
+					map_entry_can_exist);
 	if (IS_ERR_OR_NULL(map_entry)) {
 		rc = PTR_ERR(map_entry);
 		synx_util_put_object(synx_obj);
 		goto fail;
 	}
 
-	rc = synx_util_add_callback(synx_obj, *params->h_synx);
+	rc = synx_util_add_callback(map_entry->synx_obj, *params->h_synx);
 	if (rc != SYNX_SUCCESS) {
 		synx_util_release_map_entry(map_entry);
 		goto fail;
 	}
 
-	rc = synx_util_init_handle(client, synx_obj,
+	rc = synx_util_init_handle(client, map_entry->synx_obj,
 			params->h_synx, map_entry);
 	if (rc < 0) {
 		dprintk(SYNX_ERR,
@@ -239,7 +244,8 @@ static int synx_native_create_core(struct synx_client *client,
 
 	dprintk(SYNX_MEM,
 		"[sess :%llu] allocated %u, core %pK, fence %pK\n",
-		client->id, *params->h_synx, synx_obj, synx_obj->fence);
+		client->id, *params->h_synx, map_entry->synx_obj,
+		map_entry->synx_obj->fence);
 	return SYNX_SUCCESS;
 
 fail:
@@ -1274,7 +1280,8 @@ int synx_internal_merge(struct synx_session *session,
 	}
 
 	map_entry = synx_util_insert_to_map(synx_obj,
-					*params->h_merged_obj, 0);
+					*params->h_merged_obj, 0,
+					false);
 	if (IS_ERR_OR_NULL(map_entry)) {
 		rc = PTR_ERR(map_entry);
 		for (i = 0; i < count; i++) {
@@ -1684,7 +1691,8 @@ static struct synx_map_entry *synx_handle_conversion(
 		if (IS_ERR_OR_NULL(map_entry)) {
 			/* raced with release from last global client */
 			map_entry = synx_util_insert_to_map(synx_obj,
-						*h_synx, 0);
+						*h_synx, 0,
+						false);
 			if (IS_ERR_OR_NULL(map_entry)) {
 				rc = PTR_ERR(map_entry);
 				dprintk(SYNX_ERR,
@@ -1701,7 +1709,8 @@ static struct synx_map_entry *synx_handle_conversion(
 			synx_obj->type |= SYNX_CREATE_GLOBAL_FENCE;
 
 			map_entry = synx_util_insert_to_map(synx_obj,
-						*h_synx, 0);
+						*h_synx, 0,
+						false);
 			if (IS_ERR_OR_NULL(map_entry)) {
 				rc = PTR_ERR(map_entry);
 				synx_global_put_ref(
