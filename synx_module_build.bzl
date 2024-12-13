@@ -79,12 +79,23 @@ def create_module_registry(hdrs = []):
 
 def define_target_variant_modules(target, variant, registry, modules, config_options = []):
     kernel_build = "{}_{}".format(target, variant)
-    kernel_build_label = "//soc-repo:{}_base_kernel".format(kernel_build)
+    headers = select({
+        "//build/kernel/kleaf:socrepo_true": [
+            "//soc-repo:all_headers",
+        ],
+        "//build/kernel/kleaf:socrepo_false": [
+            "//msm-kernel:all_headers",
+        ],
+    })
+    kernel_build_label = select({
+        "//build/kernel/kleaf:socrepo_true": "//soc-repo:{}_base_kernel".format(kernel_build),
+        "//build/kernel/kleaf:socrepo_false": "//msm-kernel:{}".format(kernel_build),
+    })
+
     modules = [registry.get(module_name) for module_name in modules]
     options = _get_kernel_build_options(modules, config_options)
     formatter = lambda s: s.replace("%b", kernel_build).replace("%t", target)
 
-    headers = ["//soc-repo:all_headers"] + registry.hdrs
     all_module_rules = []
 
     for module in modules:
@@ -98,14 +109,13 @@ def define_target_variant_modules(target, variant, registry, modules, config_opt
         if module.deps:
             for dep in module.deps:
                 module_dep.append("{}_{}_synx".format(kernel_build, dep))
-        print("module_dep GOKUL ", module_dep);
 
         ddk_module(
             name = rule_name,
             srcs = module_srcs,
             out = "{}.ko".format(module.name),
             kernel_build = kernel_build_label,
-            deps = headers + _get_kernel_build_module_deps(module, options, formatter) + module_dep,
+            deps = headers + registry.hdrs + _get_kernel_build_module_deps(module, options, formatter) + module_dep,
             local_defines = options.keys(),
         )
 
