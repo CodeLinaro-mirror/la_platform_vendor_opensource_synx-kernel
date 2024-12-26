@@ -1,9 +1,7 @@
 load(
     "//build/kernel/kleaf:kernel.bzl",
     "ddk_module",
-    "ddk_submodule",
-    "kernel_module",
-    "kernel_modules_install",
+    "kernel_module_group",
 )
 load("//build/bazel_common_rules/dist:dist.bzl", "copy_to_dist_dir")
 
@@ -61,7 +59,7 @@ def _get_kernel_build_module_srcs(module, options, formatter):
     return globbed_srcs
 
 def _get_kernel_build_module_deps(module, options, formatter):
-    deps = module.deps + _get_config_choices(module.config_deps, options)
+    deps = _get_config_choices(module.config_deps, options)
     deps = [formatter(dep) for dep in deps]
 
     return deps
@@ -81,41 +79,56 @@ def create_module_registry(hdrs = []):
 
 def define_target_variant_modules(target, variant, registry, modules, config_options = []):
     kernel_build = "{}_{}".format(target, variant)
-    kernel_build_label = "//msm-kernel:{}".format(kernel_build)
+    headers = select({
+        "//build/kernel/kleaf:socrepo_true": [
+            "//soc-repo:all_headers",
+        ],
+        "//build/kernel/kleaf:socrepo_false": [
+            "//msm-kernel:all_headers",
+        ],
+    })
+    kernel_build_label = select({
+        "//build/kernel/kleaf:socrepo_true": "//soc-repo:{}_base_kernel".format(kernel_build),
+        "//build/kernel/kleaf:socrepo_false": "//msm-kernel:{}".format(kernel_build),
+    })
+
     modules = [registry.get(module_name) for module_name in modules]
     options = _get_kernel_build_options(modules, config_options)
-    build_print = lambda message: print("{}: {}".format(kernel_build, message))
     formatter = lambda s: s.replace("%b", kernel_build).replace("%t", target)
 
-    headers = ["//msm-kernel:all_headers"] + registry.hdrs
     all_module_rules = []
 
     for module in modules:
-        rule_name = "{}_{}".format(kernel_build, module.name)
+        module_dep = []
+        rule_name = "{}_{}_synx".format(kernel_build, module.name)
         module_srcs = _get_kernel_build_module_srcs(module, options, formatter)
 
         if not module_srcs:
             continue
 
-        ddk_submodule(
+        if module.deps:
+            for dep in module.deps:
+                module_dep.append("{}_{}_synx".format(kernel_build, dep))
+
+        ddk_module(
             name = rule_name,
             srcs = module_srcs,
             out = "{}.ko".format(module.name),
-            deps = headers + _get_kernel_build_module_deps(module, options, formatter),
+            kernel_build = kernel_build_label,
+            deps = headers + registry.hdrs + _get_kernel_build_module_deps(module, options, formatter) + module_dep,
             local_defines = options.keys(),
         )
 
         all_module_rules.append(rule_name)
 
-    ddk_module(
-        name = "{}_modules".format(kernel_build),
-        kernel_build = kernel_build_label,
-        deps = all_module_rules,
+    kernel_module_group(
+        name = "{}_synx_modules".format(kernel_build),
+        srcs = all_module_rules,
     )
 
     copy_to_dist_dir(
         name = "{}_modules_dist".format(kernel_build),
-        data = [":{}_modules".format(kernel_build)],
+        data = [":{}_synx_modules".format(kernel_build)],
         dist_dir = "out/target/product/{}/dlkm/lib/modules/".format(kernel_build),
         flat = True,
         wipe_dist_dir = False,
