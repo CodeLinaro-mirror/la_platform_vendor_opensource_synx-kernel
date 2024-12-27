@@ -122,13 +122,13 @@ def define_target_variant_modules(target, variant, registry, modules, config_opt
         all_module_rules.append(rule_name)
 
     kernel_module_group(
-        name = "{}_synx_modules".format(kernel_build),
+        name = "{}_modules".format(kernel_build),
         srcs = all_module_rules,
     )
 
     copy_to_dist_dir(
         name = "{}_modules_dist".format(kernel_build),
-        data = [":{}_synx_modules".format(kernel_build)],
+        data = [":{}_modules".format(kernel_build)],
         dist_dir = "out/target/product/{}/dlkm/lib/modules/".format(kernel_build),
         flat = True,
         wipe_dist_dir = False,
