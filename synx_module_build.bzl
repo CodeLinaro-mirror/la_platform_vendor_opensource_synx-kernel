@@ -82,6 +82,7 @@ def define_target_variant_modules(target, variant, registry, modules, config_opt
     headers = select({
         "//build/kernel/kleaf:socrepo_true": [
             "//soc-repo:all_headers",
+            "//soc-repo:{}/drivers/remoteproc/rproc_qcom_common".format(kernel_build),
         ],
         "//build/kernel/kleaf:socrepo_false": [
             "//msm-kernel:all_headers",

@@ -2850,6 +2850,9 @@ struct synx_session *synx_internal_initialize(
 	/* zero idx not allowed */
 	set_bit(0, client->cb_bitmap);
 
+	if (!synx_dev)
+		return ERR_PTR(-SYNX_INVALID);
+
 	spin_lock_bh(&synx_dev->native->metadata_map_lock);
 	hash_add(synx_dev->native->client_metadata_map,
 		&client->node, (u64)client);
