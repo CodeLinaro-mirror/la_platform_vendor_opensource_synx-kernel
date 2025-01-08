@@ -616,24 +616,28 @@ struct synx_read_n_params {
 /**
  * enum synx_get_type - Synx get params type
  *
- * SYNX_GET_STATUS_PARAMS : Get synx signaling status
- * SYNX_GET_FENCE_PARAMS  : Get native fence associated with synx object
- * SYNX_GET_CLIENT_DATA   : Get 64-bit client metadata associated with synx object
+ * SYNX_GET_STATUS_PARAMS     : Get synx signaling status
+ * SYNX_GET_FENCE_PARAMS      : Get native fence associated with synx object
+ * SYNX_GET_CLIENT_DATA       : Get 64-bit client metadata associated with synx object
+ * SYNX_GET_MAX_GLOBAL_FENCES : Get maximum number of fences used for cross-core signaling
  */
 enum synx_get_type {
 	SYNX_GET_STATUS_PARAMS = 0x01,
 	SYNX_GET_FENCE_PARAMS = 0x02,
 	SYNX_GET_CLIENT_DATA = 0x03,
+	SYNX_GET_MAX_GLOBAL_FENCES = 0x04,
 };
 
 /**
  * struct synx_get_params - Synx get parameters
  *
- * @type        : Get params type filled by client
- * @h_synx      : handle of synx object filled by client
- * @status      : signaling status of synx object, filled by function call
- * @fence       : native fence associated with synx object, filled by function call
- * @client_data : 64-bit client metadata associated with synx object, filled by function call
+ * @type              : Get params type filled by client
+ * @h_synx            : handle of synx object filled by client
+ * @status            : signaling status of synx object, filled by function call
+ * @fence             : native fence associated with synx object, filled by function call
+ * @client_data       : 64-bit client metadata associated with synx object, filled by function call
+ * @max_global_fences : maximum number of fences used for cross-core signaling, filled by
+ *                      function call
  */
 struct synx_get_params {
 	enum synx_get_type type;
@@ -642,6 +646,7 @@ struct synx_get_params {
 		enum synx_signal_status status;
 		void *fence;
 		u64 client_data;
+		u64 max_global_fences;
 	};
 };
 
