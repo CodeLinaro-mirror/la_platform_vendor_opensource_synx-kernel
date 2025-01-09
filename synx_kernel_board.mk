@@ -8,6 +8,11 @@ ifeq ($(TARGET_KERNEL_DLKM_DISABLE),true)
 else
 TARGET_SYNX_ENABLE := true
 endif
+
+ifeq ($(TARGET_BOARD_PLATFORM), gen5)
+TARGET_SYNX_ENABLE := false
+endif
+
 #
 ifeq ($(TARGET_SYNX_ENABLE), true)
 ifeq ($(call is-board-platform-in-list,$(TARGET_BOARD_PLATFORM)),true)
