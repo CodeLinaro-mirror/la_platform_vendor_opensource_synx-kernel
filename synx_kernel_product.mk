@@ -7,6 +7,10 @@ else
 TARGET_SYNX_ENABLE := true
 endif
 
+ifeq ($(TARGET_BOARD_PLATFORM), gen5)
+TARGET_SYNX_ENABLE := false
+endif
+
 ifeq ($(TARGET_SYNX_ENABLE), true)
 PRODUCT_PACKAGES += synx-driver.ko
 endif
