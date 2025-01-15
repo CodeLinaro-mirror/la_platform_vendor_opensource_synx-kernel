@@ -194,10 +194,14 @@ static int synx_native_create_core(struct synx_client *client,
 	int rc;
 	struct synx_coredata *synx_obj;
 	struct synx_map_entry *map_entry;
+	bool map_entry_can_exist = false;
 
 	if (IS_ERR_OR_NULL(client) || IS_ERR_OR_NULL(params) ||
 		IS_ERR_OR_NULL(params->h_synx))
 		return -SYNX_INVALID;
+
+	if (*params->h_synx != 0)
+		map_entry_can_exist = true;
 
 	synx_obj = kzalloc(sizeof(*synx_obj), GFP_KERNEL);
 	if (IS_ERR_OR_NULL(synx_obj))
@@ -214,20 +218,21 @@ static int synx_native_create_core(struct synx_client *client,
 	}
 
 	map_entry = synx_util_insert_to_map(synx_obj,
-					*params->h_synx, 0);
+					*params->h_synx, 0,
+					map_entry_can_exist);
 	if (IS_ERR_OR_NULL(map_entry)) {
 		rc = PTR_ERR(map_entry);
 		synx_util_put_object(synx_obj);
 		goto fail;
 	}
 
-	rc = synx_util_add_callback(synx_obj, *params->h_synx);
+	rc = synx_util_add_callback(map_entry->synx_obj, *params->h_synx);
 	if (rc != SYNX_SUCCESS) {
 		synx_util_release_map_entry(map_entry);
 		goto fail;
 	}
 
-	rc = synx_util_init_handle(client, synx_obj,
+	rc = synx_util_init_handle(client, map_entry->synx_obj,
 			params->h_synx, map_entry);
 	if (rc < 0) {
 		dprintk(SYNX_ERR,
@@ -239,7 +244,8 @@ static int synx_native_create_core(struct synx_client *client,
 
 	dprintk(SYNX_MEM,
 		"[sess :%llu] allocated %u, core %pK, fence %pK\n",
-		client->id, *params->h_synx, synx_obj, synx_obj->fence);
+		client->id, *params->h_synx, map_entry->synx_obj,
+		map_entry->synx_obj->fence);
 	return SYNX_SUCCESS;
 
 fail:
@@ -904,21 +910,21 @@ void synx_timer_handler(struct work_struct *cb_dispatch)
 	struct synx_handle_coredata *synx_data;
 	struct synx_coredata *synx_obj;
 
-	synx_cb = (struct synx_cb_data *)synx_timer_cb->data;
+	synx_cb = (struct synx_cb_data *)synx_timer_cb->synx_cb;
 
-	client = synx_get_client(synx_cb->session);
+	client = synx_get_client(synx_timer_cb->session);
 	if (IS_ERR_OR_NULL(client)) {
 		dprintk(SYNX_ERR,
 			"invalid session data %pK in synx_cb %pK\n",
-			synx_cb->session, synx_cb);
+			synx_timer_cb->session, synx_cb);
 		goto free;
 	}
-	synx_data = synx_util_acquire_handle(client, synx_cb->h_synx);
+	synx_data = synx_util_acquire_handle(client, synx_timer_cb->h_synx);
 	synx_obj = synx_util_obtain_object(synx_data);
 	if (IS_ERR_OR_NULL(synx_obj)) {
 		dprintk(SYNX_ERR,
 			"[sess : %pK] invalid handle access 0x%x\n",
-			synx_cb->session, synx_cb->h_synx);
+			synx_timer_cb->session, synx_timer_cb->h_synx);
 		goto fail;
 	}
 	dprintk(SYNX_VERB, "Timer callback expired for synx_cb %pK\n", synx_cb);
@@ -959,7 +965,9 @@ void synx_timer_cb(struct timer_list *data)
 		return;
 	}
 
-	synx_timer_cb->data = (void *)synx_cb;
+	synx_timer_cb->synx_cb = synx_cb;
+	synx_timer_cb->session = synx_cb->session;
+	synx_timer_cb->h_synx = synx_cb->h_synx;
 
 	/*
 	 * since the timer is waited upon during signal dispatch,
@@ -1164,7 +1172,7 @@ int synx_internal_cancel_async_wait(
 			dprintk(SYNX_VERB,
 				"Deleting timer synx_cb %p, timeout 0x%llx\n",
 				synx_cb, synx_cb->timeout);
-			del_timer(&synx_cb->synx_timer);
+			del_timer_sync(&synx_cb->synx_timer);
 		}
 		switch (ret) {
 		case 1:
@@ -1205,13 +1213,14 @@ int synx_internal_merge(struct synx_session *session,
 	struct synx_merge_params *params)
 {
 	int rc = SYNX_SUCCESS, i, num_signaled = 0;
-	u32 count = 0, h_child, status = SYNX_STATE_ACTIVE;
+	u32 count = 0, h_child = 0, status = SYNX_STATE_ACTIVE;
 	u32 *h_child_list = NULL, *h_child_idx_list = NULL;
 	struct synx_client *client;
 	struct dma_fence **fences = NULL;
-	struct synx_map_entry *map_entry;
+	struct synx_map_entry *map_entry = NULL;
 	struct synx_coredata *synx_obj, *synx_obj_child;
 	struct synx_handle_coredata *synx_data_child;
+	struct synx_map_entry **map_entry_list = NULL;
 
 	if (IS_ERR_OR_NULL(session) || IS_ERR_OR_NULL(params))
 		return -SYNX_INVALID;
@@ -1239,10 +1248,17 @@ int synx_internal_merge(struct synx_session *session,
 			"[sess :%llu] merge validation failed\n",
 			client->id);
 		rc = -SYNX_INVALID;
-
 		kfree(synx_obj);
 		goto fail;
 	}
+
+	map_entry_list = kcalloc(count, sizeof(*map_entry_list), GFP_KERNEL);
+	if (IS_ERR_OR_NULL(map_entry_list)) {
+		kfree(synx_obj);
+		goto clean_up;
+	}
+
+	memset(map_entry_list, 0, count * sizeof(*map_entry_list));
 
 	rc = synx_util_init_group_coredata(synx_obj, fences,
 			params, count, client->dma_context);
@@ -1253,17 +1269,33 @@ int synx_internal_merge(struct synx_session *session,
 		goto clean_up;
 	}
 
+	for (i = 0; i < count; i++) {
+		h_child = synx_util_get_fence_entry((u64)fences[i], 1);
+		map_entry_list[i] = synx_util_get_map_entry(h_child);
+		if (IS_ERR_OR_NULL(map_entry_list[i]) ||
+			IS_ERR_OR_NULL(map_entry_list[i]->synx_obj)) {
+			dma_fence_put(synx_obj->fence);
+			goto clean_up;
+		}
+	}
+
 	map_entry = synx_util_insert_to_map(synx_obj,
-					*params->h_merged_obj, 0);
+					*params->h_merged_obj, 0,
+					false);
 	if (IS_ERR_OR_NULL(map_entry)) {
 		rc = PTR_ERR(map_entry);
-
+		for (i = 0; i < count; i++) {
+			if (IS_ERR_OR_NULL(map_entry_list[i]))
+				continue;
+			synx_util_release_map_entry(map_entry_list[i]);
+		}
 		/*
 		 * dma fence put will take care of removing the references taken
 		 * on child fences
 		 */
 		dma_fence_put(synx_obj->fence);
 		kfree(synx_obj);
+		kfree(map_entry_list);
 		goto fail;
 	}
 
@@ -1345,9 +1377,11 @@ int synx_internal_merge(struct synx_session *session,
 		synx_obj->fence);
 	kfree(h_child_list);
 	kfree(h_child_idx_list);
+	kfree(map_entry_list);
 	synx_put_client(client);
 	return SYNX_SUCCESS;
 clear:
+	kfree(map_entry_list);
 	synx_native_release_core(client, (*params->h_merged_obj));
 	synx_put_client(client);
 	return rc;
@@ -1359,13 +1393,15 @@ clean_up:
 	 */
 	if (IS_ERR_OR_NULL(map_entry)) {
 		kfree(synx_obj);
-		synx_util_merge_error(client, params->h_synxs, count);
+		synx_util_merge_error(client, fences, count, map_entry_list);
 		if (params->num_objs && params->num_objs <= count)
 			kfree(fences);
 
 	} else {
 		synx_util_release_map_entry(map_entry);
 	}
+	if (!IS_ERR_OR_NULL(map_entry_list))
+		kfree(map_entry_list);
 fail:
 	synx_put_client(client);
 	return rc;
@@ -1655,7 +1691,8 @@ static struct synx_map_entry *synx_handle_conversion(
 		if (IS_ERR_OR_NULL(map_entry)) {
 			/* raced with release from last global client */
 			map_entry = synx_util_insert_to_map(synx_obj,
-						*h_synx, 0);
+						*h_synx, 0,
+						false);
 			if (IS_ERR_OR_NULL(map_entry)) {
 				rc = PTR_ERR(map_entry);
 				dprintk(SYNX_ERR,
@@ -1672,7 +1709,8 @@ static struct synx_map_entry *synx_handle_conversion(
 			synx_obj->type |= SYNX_CREATE_GLOBAL_FENCE;
 
 			map_entry = synx_util_insert_to_map(synx_obj,
-						*h_synx, 0);
+						*h_synx, 0,
+						false);
 			if (IS_ERR_OR_NULL(map_entry)) {
 				rc = PTR_ERR(map_entry);
 				synx_global_put_ref(
@@ -2308,10 +2346,9 @@ static int synx_handle_import_arr(
 {
 	int rc = -SYNX_INVALID;
 	u32 idx = 0;
-	struct synx_client *client;
 	struct synx_import_arr_info arr_info;
 	struct synx_import_info *arr;
-	struct synx_import_indv_params params = {0};
+	struct synx_import_params params = {0};
 
 	if (k_ioctl->size != sizeof(arr_info))
 		return -SYNX_INVALID;
@@ -2326,12 +2363,6 @@ static int synx_handle_import_arr(
 	if (IS_ERR_OR_NULL(arr))
 		return -ENOMEM;
 
-	client = synx_get_client(session);
-	if (IS_ERR_OR_NULL(client)) {
-		rc = PTR_ERR(client);
-		goto clean;
-	}
-
 	if (copy_from_user(arr,
 			u64_to_user_ptr(arr_info.list),
 			sizeof(*arr) * arr_info.num_objs)) {
@@ -2340,20 +2371,21 @@ static int synx_handle_import_arr(
 	}
 
 	while (idx < arr_info.num_objs) {
-		params.new_h_synx = &arr[idx].new_synx_obj;
-		params.flags = arr[idx].flags;
+		params.type = SYNX_IMPORT_INDV_PARAMS;
+		params.indv.new_h_synx = &arr[idx].new_synx_obj;
+		params.indv.flags = arr[idx].flags;
 
 		if (arr[idx].flags & SYNX_IMPORT_DMA_FENCE)
-			params.fence =
+			params.indv.fence =
 				sync_file_get_fence(arr[idx].desc.id[0]);
 		else if (arr[idx].flags & SYNX_IMPORT_SYNX_FENCE)
-			params.fence = &arr[idx].synx_obj;
+			params.indv.fence = &arr[idx].synx_obj;
 
-		rc = synx_native_import_indv(client, &params);
+		rc = synx_import(session, &params);
 
 		// Fence needs to be put irresepctive of import status
 		if (arr[idx].flags & SYNX_IMPORT_DMA_FENCE)
-			dma_fence_put(params.fence);
+			dma_fence_put(params.indv.fence);
 
 		if (rc != SYNX_SUCCESS)
 			break;
@@ -2363,7 +2395,7 @@ static int synx_handle_import_arr(
 	/* release allocated handles in case of failure */
 	if (rc != SYNX_SUCCESS) {
 		while (idx > 0)
-			synx_native_release_core(client,
+			synx_release(session,
 				arr[--idx].new_synx_obj);
 	} else {
 		if (copy_to_user(u64_to_user_ptr(arr_info.list),
@@ -2375,8 +2407,6 @@ static int synx_handle_import_arr(
 	}
 
 fail:
-	synx_put_client(client);
-clean:
 	kfree(arr);
 	return rc;
 }
@@ -2829,6 +2859,9 @@ struct synx_session *synx_internal_initialize(
 	/* zero idx not allowed */
 	set_bit(0, client->cb_bitmap);
 
+	if (!synx_dev)
+		return ERR_PTR(-SYNX_INVALID);
+
 	spin_lock_bh(&synx_dev->native->metadata_map_lock);
 	hash_add(synx_dev->native->client_metadata_map,
 		&client->node, (u64)client);
@@ -3058,6 +3091,39 @@ int synx_internal_recover(enum synx_client_id id)
 	return synx_global_recover(core_id);
 }
 
+int synx_internal_notify_recover(enum synx_core_id id)
+{
+	if (IS_ERR_OR_NULL(hwfence_shared_ops.signal_fence)) {
+		dprintk(SYNX_ERR, "interop hwfence_signal_fence API not available");
+		return -SYNX_INVALID;
+	}
+
+	if (id != SYNX_CORE_SOCCP) {
+		dprintk(SYNX_ERR, "Invalid coreId %d\n", id);
+		return -SYNX_INVALID;
+	}
+
+	dprintk(SYNX_DBG, "Subsystem restart for core_id: %d\n", id);
+
+	return synx_global_recover_interop(id, &hwfence_shared_ops);
+}
+
+int synx_internal_signal_fence(enum synx_core_id id, bool is_core_ssr,
+	u32 h_synx, enum synx_signal_status status)
+{
+	if (id != SYNX_CORE_SOCCP) {
+		dprintk(SYNX_ERR, "Invalid core id %u passed\n", id);
+		return -SYNX_INVALID;
+	}
+
+	if (!synx_util_is_global_handle(h_synx)) {
+		dprintk(SYNX_ERR, "h_synx %u is not global\n", h_synx);
+		return -SYNX_INVALID;
+	}
+
+	return synx_global_recover_index(id, is_core_ssr, synx_util_global_idx(h_synx), status);
+}
+
 static int synx_local_mem_init(void)
 {
 	if (!synx_dev->native)
@@ -3192,7 +3258,8 @@ static int __init synx_init(void)
 
 	synx_shared_ops.share_handle_status = synx_internal_share_handle_status;
 	synx_shared_ops.get_fence = synx_internal_get_dma_fence;
-	synx_shared_ops.notify_recover = NULL;
+	synx_shared_ops.notify_recover = synx_internal_notify_recover;
+	synx_shared_ops.signal_fence = synx_internal_signal_fence;
 	rc  = synx_hwfence_init_interops(&synx_shared_ops, &hwfence_shared_ops);
 	if (rc) {
 		dprintk(SYNX_ERR, "Hw fence inter-op mapping failed, err %d\n", rc);

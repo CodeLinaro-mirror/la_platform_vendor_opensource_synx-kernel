@@ -316,7 +316,7 @@ void synx_util_object_destroy(struct synx_coredata *synx_obj)
 {
 	int rc;
 	int num_dma_array = 0;
-	u32 i;
+	u32 i = 0;
 	s32 sync_id;
 	u32 type;
 	unsigned long flags;
@@ -324,6 +324,9 @@ void synx_util_object_destroy(struct synx_coredata *synx_obj)
 	struct synx_bind_desc *bind_desc;
 	struct bind_operations *bind_ops;
 	struct synx_external_data *data;
+	struct dma_fence_array *array = NULL;
+	u32 h_child = 0;
+	struct synx_map_entry *map_entry = NULL;
 
 	/* clear all the undispatched callbacks */
 	list_for_each_entry_safe(synx_cb,
@@ -378,6 +381,20 @@ void synx_util_object_destroy(struct synx_coredata *synx_obj)
 		kfree(data);
 	}
 
+	if (dma_fence_is_array(synx_obj->fence)) {
+		array = to_dma_fence_array(synx_obj->fence);
+		if (!IS_ERR_OR_NULL(array)) {
+			for (i = 0; i < array->num_fences; i++) {
+				h_child = synx_util_get_fence_entry((u64)array->fences[i], 1);
+				map_entry = synx_util_get_map_entry(h_child);
+				if (IS_ERR_OR_NULL(map_entry) ||
+					IS_ERR_OR_NULL(map_entry->synx_obj))
+					continue;
+				synx_util_release_map_entry(map_entry);
+				synx_util_release_map_entry(map_entry);
+			}
+		}
+	}
 	mutex_destroy(&synx_obj->obj_lock);
 	synx_util_release_fence_entry((u64)synx_obj->fence);
 
@@ -628,32 +645,25 @@ static u32 synx_util_remove_duplicates(struct dma_fence **arr, u32 num)
 }
 
 s32 synx_util_merge_error(struct synx_client *client,
-	u32 *h_synxs,
-	u32 num_objs)
+	struct dma_fence **fences,
+	u32 fence_count,
+	struct synx_map_entry **map_list)
 {
 	u32 i = 0;
-	struct synx_handle_coredata *synx_data;
-	struct synx_coredata *synx_obj;
 
-	if (IS_ERR_OR_NULL(client) || IS_ERR_OR_NULL(h_synxs))
+	if (IS_ERR_OR_NULL(fences))
 		return -SYNX_INVALID;
 
-	for (i = 0; i < num_objs; i++) {
-		synx_data = synx_util_acquire_handle(client, h_synxs[i]);
-		synx_obj = synx_util_obtain_object(synx_data);
-		if (IS_ERR_OR_NULL(synx_obj) ||
-			IS_ERR_OR_NULL(synx_obj->fence)) {
-			dprintk(SYNX_ERR,
-				"[sess :%llu] invalid handle %d in cleanup\n",
-				client->id, h_synxs[i]);
+	for (i = 0; i < fence_count; i++) {
+		if (IS_ERR_OR_NULL(fences[i]))
 			continue;
-		}
-		/* release all references obtained during merge validatation */
-		synx_util_put_references(synx_obj);
-		synx_util_release_handle(synx_data);
-	}
 
-	return 0;
+		dma_fence_put(fences[i]);
+		if (IS_ERR_OR_NULL(map_list) || IS_ERR_OR_NULL(map_list[i]))
+			continue;
+		synx_util_release_map_entry(map_list[i]);
+	}
+	return SYNX_SUCCESS;
 }
 
 int synx_util_validate_merge(struct synx_client *client,
@@ -756,14 +766,17 @@ u32 __fence_state(struct dma_fence *fence, bool locked)
 	case -SYNX_STATE_SIGNALED_CANCEL:
 		state = SYNX_STATE_SIGNALED_CANCEL;
 		break;
-	case -SYNX_STATE_SIGNALED_EXTERNAL:
-		state = SYNX_STATE_SIGNALED_EXTERNAL;
-		break;
 	case -SYNX_STATE_SIGNALED_ERROR:
 		state = SYNX_STATE_SIGNALED_ERROR;
 		break;
+	case -SYNX_STATE_SIGNALED_SSR:
+		state = SYNX_STATE_SIGNALED_SSR;
+		break;
 	default:
-		state = (u32)(-status);
+		if (status < 0 && status >= -SYNX_STATE_SIGNALED_MAX)
+			state = SYNX_STATE_SIGNALED_EXTERNAL;
+		else
+			state = (u32)(-status);
 	}
 
 	return state;
@@ -876,9 +889,11 @@ struct synx_handle_coredata *synx_util_acquire_handle(
 
 struct synx_map_entry *synx_util_insert_to_map(
 	struct synx_coredata *synx_obj,
-	u32 h_synx, u32 flags)
+	u32 h_synx, u32 flags,
+	bool map_entry_can_exist)
 {
 	struct synx_map_entry *map_entry;
+	struct synx_map_entry *curr;
 
 	map_entry = kzalloc(sizeof(*map_entry), GFP_KERNEL);
 	if (IS_ERR_OR_NULL(map_entry))
@@ -891,6 +906,25 @@ struct synx_map_entry *synx_util_insert_to_map(
 
 	if (synx_util_is_global_handle(h_synx)) {
 		spin_lock_bh(&synx_dev->native->global_map_lock);
+		hash_for_each_possible(synx_dev->native->global_map,
+			curr, node, h_synx) {
+			if (curr->key == h_synx && map_entry_can_exist) {
+				kref_get(&curr->refcount);
+				synx_util_put_object(synx_obj);
+				kfree(map_entry);
+				spin_unlock_bh(&synx_dev->native->global_map_lock);
+				dprintk(SYNX_MEM,
+					"map entry %pK already found h_synx %u\n",
+					curr, h_synx);
+				return curr;
+			} else if (curr->key == h_synx && !map_entry_can_exist) {
+				kfree(map_entry);
+				spin_unlock_bh(&synx_dev->native->global_map_lock);
+				dprintk(SYNX_ERR, "map entry %pK already exists h_synx %u\n",
+						curr, h_synx);
+				return ERR_PTR(-SYNX_INVALID);
+			}
+		}
 		hash_add(synx_dev->native->global_map,
 			&map_entry->node, h_synx);
 		spin_unlock_bh(&synx_dev->native->global_map_lock);
@@ -899,6 +933,25 @@ struct synx_map_entry *synx_util_insert_to_map(
 			h_synx, map_entry);
 	} else {
 		spin_lock_bh(&synx_dev->native->local_map_lock);
+		hash_for_each_possible(synx_dev->native->local_map,
+			curr, node, h_synx) {
+			if (curr->key == h_synx && map_entry_can_exist) {
+				kref_get(&curr->refcount);
+				synx_util_put_object(synx_obj);
+				kfree(map_entry);
+				spin_unlock_bh(&synx_dev->native->local_map_lock);
+				dprintk(SYNX_MEM,
+					"map entry %pK already found: h_synx %u\n",
+					curr, h_synx);
+				return curr;
+			} else if (curr->key == h_synx && !map_entry_can_exist) {
+				kfree(map_entry);
+				spin_unlock_bh(&synx_dev->native->local_map_lock);
+				dprintk(SYNX_ERR, "map entry %pK already exists h_synx %u\n",
+						curr, h_synx);
+				return ERR_PTR(-SYNX_INVALID);
+			}
+		}
 		hash_add(synx_dev->native->local_map,
 			&map_entry->node, h_synx);
 		spin_unlock_bh(&synx_dev->native->local_map_lock);

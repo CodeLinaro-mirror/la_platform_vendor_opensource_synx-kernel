@@ -99,7 +99,7 @@ static inline struct synx_coredata *synx_util_obtain_object(
 
 /* global/local map functions */
 struct synx_map_entry *synx_util_insert_to_map(struct synx_coredata *synx_obj,
-			u32 h_synx, u32 flags);
+			u32 h_synx, u32 flags, bool map_entry_can_exist);
 struct synx_map_entry *synx_util_get_map_entry(u32 h_synx);
 void synx_util_release_map_entry(struct synx_map_entry *map_entry);
 void synx_util_destroy_map_entry(struct kref *kref);
@@ -145,7 +145,8 @@ int synx_util_activate(struct synx_coredata *synx_obj);
 int synx_util_add_callback(struct synx_coredata *synx_obj, u32 h_synx);
 
 /* merge related helper functions */
-s32 synx_util_merge_error(struct synx_client *client, u32 *h_synxs, u32 num_objs);
+s32 synx_util_merge_error(struct synx_client *client, struct dma_fence **fences, u32 fence_count,
+			struct synx_map_entry **map_list);
 int synx_util_validate_merge(struct synx_client *client, u32 *h_synxs, u32 num_objs,
 			struct dma_fence ***fences,
 			u32 *fence_cnt);
