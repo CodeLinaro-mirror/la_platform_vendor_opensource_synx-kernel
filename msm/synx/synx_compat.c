@@ -25,19 +25,19 @@ struct synx_ops synx_hwfence_ops = {
 	.get = NULL
 };
 
-static struct synx_ops synx_internal_ops = {
-	.uninitialize = synx_internal_uninitialize,
-	.create = synx_internal_create,
-	.release = synx_internal_release,
-	.release_n = synx_internal_release_n,
-	.signal = synx_internal_signal,
-	.async_wait = synx_internal_async_wait,
-	.get_fence = synx_internal_get_fence,
-	.import = synx_internal_import,
-	.get_status = synx_internal_get_status,
-	.merge = synx_internal_merge,
-	.wait = synx_internal_wait,
-	.cancel_async_wait = synx_internal_cancel_async_wait,
+struct synx_ops synx_internal_ops = {
+	.uninitialize = NULL,
+	.create = NULL,
+	.release = NULL,
+	.release_n = NULL,
+	.signal = NULL,
+	.async_wait = NULL,
+	.get_fence = NULL,
+	.import = NULL,
+	.get_status = NULL,
+	.merge = NULL,
+	.wait = NULL,
+	.cancel_async_wait = NULL,
 	.get = NULL
 };
 
