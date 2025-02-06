@@ -2432,7 +2432,8 @@ static int synx_native_import_handle(struct synx_client *client,
 				"[sess :%llu] invalid import handle %u\n",
 				client->id, h_synx);
 			return -SYNX_INVALID;
-		} else if (synx_util_is_global_handle(h_synx)) {
+		} else if (synx_util_is_global_handle(h_synx) &&
+					(params->flags & SYNX_IMPORT_GLOBAL_FENCE)) {
 			/* import global handle created in another core */
 			synx_util_map_import_params_to_create(imp_params, &c_params);
 			scnprintf(name, SYNX_OBJ_NAME_LEN, "import-client-%d",
@@ -2446,6 +2447,12 @@ static int synx_native_import_handle(struct synx_client *client,
 
 			*params->new_h_synx = h_synx;
 			return SYNX_SUCCESS;
+		} else if (synx_util_is_global_handle(h_synx) &&
+					(params->flags & SYNX_IMPORT_LOCAL_FENCE)) {
+			dprintk(SYNX_ERR,
+				"[sess :%llu] global h_synx %u import as local is not supported\n",
+				client->id, h_synx);
+			return -SYNX_NOSUPPORT;
 		}
 		dprintk(SYNX_ERR,
 			"[sess :%llu] invalid handle %u\n",
