@@ -1266,10 +1266,8 @@ int synx_internal_merge(struct synx_session *session,
 	}
 
 	map_entry_list = kcalloc(count, sizeof(*map_entry_list), GFP_KERNEL);
-	if (IS_ERR_OR_NULL(map_entry_list)) {
-		kfree(synx_obj);
+	if (IS_ERR_OR_NULL(map_entry_list))
 		goto clean_up;
-	}
 
 	memset(map_entry_list, 0, count * sizeof(*map_entry_list));
 
@@ -1287,8 +1285,13 @@ int synx_internal_merge(struct synx_session *session,
 		map_entry_list[i] = synx_util_get_map_entry(h_child);
 		if (IS_ERR_OR_NULL(map_entry_list[i]) ||
 			IS_ERR_OR_NULL(map_entry_list[i]->synx_obj)) {
-			dma_fence_put(synx_obj->fence);
-			goto clean_up;
+			while (++i < count) {
+				h_child = synx_util_get_fence_entry((u64)fences[i], 1);
+				map_entry_list[i] = synx_util_get_map_entry(h_child);
+			}
+			synx_util_put_object(synx_obj);
+			kfree(map_entry_list);
+			goto fail;
 		}
 	}
 
@@ -1297,17 +1300,7 @@ int synx_internal_merge(struct synx_session *session,
 					false);
 	if (IS_ERR_OR_NULL(map_entry)) {
 		rc = PTR_ERR(map_entry);
-		for (i = 0; i < count; i++) {
-			if (IS_ERR_OR_NULL(map_entry_list[i]))
-				continue;
-			synx_util_release_map_entry(map_entry_list[i]);
-		}
-		/*
-		 * dma fence put will take care of removing the references taken
-		 * on child fences
-		 */
-		dma_fence_put(synx_obj->fence);
-		kfree(synx_obj);
+		synx_util_put_object(synx_obj);
 		kfree(map_entry_list);
 		goto fail;
 	}
