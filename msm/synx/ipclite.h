@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2021-2023, Qualcomm Innovation Center, Inc. All rights reserved..
+ * Copyright (c) 2021-2023,2025, Qualcomm Innovation Center, Inc. All rights reserved..
  */
 #include <linux/hwspinlock.h>
 #include <linux/module.h>
@@ -109,11 +109,6 @@ enum ipclite_channel_status {
 	ACTIVE					= 2,
 };
 
-enum ipclite_feature_mask {
-	IPCLITE_GLOBAL_ATOMIC = 0x0001ULL,
-	IPCLITE_TEST_SUITE = 0x0002ULL,
-};
-
 enum ipclite_debug_level {
 	IPCLITE_ERR  = 0x0001,
 	IPCLITE_WARN = 0x0002,
@@ -215,7 +210,7 @@ struct ipcmem_offsets {
 	uint32_t partition_info;
 	uint32_t partition_entry;
 	uint32_t debug;
-	uint32_t reserved;		/*Padded for 64-bit alignment*/
+	uint32_t atomic_entry;
 };
 
 /**
@@ -267,6 +262,16 @@ struct ipcmem_global_partition {
 	struct global_partition_header hdr;
 };
 
+struct atomic_partition_header {
+	uint32_t partition_type;
+	uint32_t region_offset;
+	uint32_t region_size;
+};
+
+struct ipcmem_atomic_partition {
+	struct atomic_partition_header hdr;
+};
+
 struct ipcmem_partition_header {
 	uint32_t type;			   /*partition type*/
 	uint32_t desc_offset;      /*descriptor offset*/
@@ -294,6 +299,7 @@ struct ipcmem_toc_data {
 	struct ipcmem_partition_entry *global_entry;
 	struct ipcmem_partition_info *partition_info;
 	struct ipcmem_partition_entry *partition_entry;
+	struct ipcmem_partition_entry *atomic_entry;
 };
 
 struct ipcmem_region {
@@ -307,6 +313,7 @@ struct ipclite_mem {
 	struct ipcmem_toc_data toc_data;
 	struct ipcmem_region mem;
 	struct ipcmem_global_partition *global_partition;
+	uint32_t num_partitions;
 	struct ipcmem_partition **partition;
 };
 
@@ -370,11 +377,16 @@ struct ipclite_channel {
 	uint32_t status;
 };
 
+struct ipclite_global_lock_table {
+	uint32_t global_lock[IPCLITE_MAX_GLOBAL_LOCK];
+};
+
 /*Single structure that defines everything about IPCLite*/
 struct ipclite_info {
 	struct device *dev;
 	struct ipclite_channel channel[IPCMEM_NUM_HOSTS];
 	struct ipclite_mem ipcmem;
+	struct ipclite_global_lock_table *gl_lock_table;
 	struct hwspinlock *hwlock;
 	unsigned long hw_mutex_flags;
 };
@@ -410,6 +422,16 @@ struct ipclite_info {
 /*Debug partition parameters*/
 #define DEBUG_PARTITION_SIZE			(64*1024)
 
+/*Atomic partition parameters*/
+#define ATOMIC_PARTITION_TYPE			0xFE
+#define ATOMIC_PARTITION_HDR_SIZE		(2*1024)
+
+#define ATOMIC_REGION_OFFSET			(2*1024)
+#define ATOMIC_REGION_SIZE				(2*1024)
+
+#define ATOMIC_PARTITION_SIZE			(4*1024)
+#define ATOMIC_PARTITION_FLAGS			IPCMEM_FLAGS_ENABLE_RW_PROTECTION
+
 const struct ipcmem_partition_header default_partition_hdr = {
 	DEFAULT_PARTITION_TYPE,
 	DEFAULT_DESCRIPTOR_OFFSET,
@@ -439,4 +461,10 @@ const struct global_partition_header global_partition_hdr = {
 	GLOBAL_PARTITION_TYPE,
 	GLOBAL_REGION_OFFSET,
 	GLOBAL_REGION_SIZE,
+};
+
+const struct atomic_partition_header atomic_partition_hdr = {
+	ATOMIC_PARTITION_TYPE,
+	ATOMIC_REGION_OFFSET,
+	ATOMIC_REGION_SIZE,
 };

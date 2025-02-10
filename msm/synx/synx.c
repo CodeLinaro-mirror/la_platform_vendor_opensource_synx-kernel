@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/atomic.h>
@@ -136,6 +136,7 @@ void *synx_internal_get_fence(struct synx_session *session,
 
 	mutex_lock(&synx_obj->obj_lock);
 	fence = synx_obj->fence;
+	dprintk(SYNX_VERB, "[sess :%llu], h_synx :%u, fence :%pK\n", client->id, h_synx, fence);
 	/* obtain an additional reference to the fence */
 	dma_fence_get(fence);
 	mutex_unlock(&synx_obj->obj_lock);
@@ -651,7 +652,7 @@ void synx_signal_handler(struct work_struct *cb_dispatch)
 				synx_util_global_idx(h_synx) :
 				synx_obj->global_idx;
 		if (synx_global_get_status(idx) == SYNX_STATE_ACTIVE) {
-			rc = synx_global_update_status(idx, status);
+			rc = synx_global_update_status_core(idx, status, false);
 			if (rc != SYNX_SUCCESS)
 				dprintk(SYNX_ERR,
 					"global status update of %u failed=%d\n",
@@ -839,8 +840,8 @@ int synx_internal_signal(struct synx_session *session, u32 h_synx, enum synx_sig
 	mutex_lock(&synx_obj->obj_lock);
 	if (synx_util_is_global_handle(h_synx) ||
 			synx_util_is_global_object(synx_obj))
-		rc = synx_global_update_status(
-				synx_obj->global_idx, status);
+		rc = synx_global_update_status_core(
+				synx_obj->global_idx, status, false);
 
 	if (rc != SYNX_SUCCESS) {
 		mutex_unlock(&synx_obj->obj_lock);
@@ -860,10 +861,14 @@ int synx_internal_signal(struct synx_session *session, u32 h_synx, enum synx_sig
 				h_synx, status);
 
 	rc = synx_native_signal_fence(synx_obj, status);
-	if (rc != SYNX_SUCCESS)
+	if (rc != SYNX_SUCCESS) {
 		dprintk(SYNX_ERR,
 			"[sess :%llu] signaling %u failed=%d\n",
 			client->id, h_synx, rc);
+	} else {
+		dprintk(SYNX_VERB,
+			"[sess :%llu] signaling %u success\n", client->id, h_synx);
+	}
 	mutex_unlock(&synx_obj->obj_lock);
 
 fail:
@@ -1147,7 +1152,7 @@ int synx_internal_cancel_async_wait(
 	}
 
 	status = SYNX_CALLBACK_RESULT_CANCELED;
-	/* remove all cb payloads mayching the deregister call */
+	/* remove all cb payloads matching the deregister call */
 	list_for_each_entry_safe(synx_cb, synx_cb_temp,
 			&synx_obj->reg_cbs_list, node) {
 		if (synx_cb->session != session) {
@@ -1198,8 +1203,16 @@ int synx_internal_cancel_async_wait(
 		}
 	}
 
-	if (!match_found)
+	if (!match_found) {
+		dprintk(SYNX_ERR,
+			"[sess :%llu], cb_payload match not found, h_synx :%u\n",
+			client->id, params->h_synx);
 		rc = -SYNX_INVALID;
+		goto release;
+	}
+	dprintk(SYNX_VERB,
+		"[sess :%llu], cancel async wait cb success, h_synx :%u\n",
+		client->id, params->h_synx);
 
 release:
 	mutex_unlock(&synx_obj->obj_lock);
@@ -1492,6 +1505,7 @@ int synx_internal_wait(struct synx_session *session,
 		rc = -ETIMEDOUT;
 		goto fail;
 	}
+	dprintk(SYNX_VERB, "[sess :%llu], wait unblocked. h_synx: %u\n", client->id, h_synx);
 
 	mutex_lock(&synx_obj->obj_lock);
 	rc = synx_util_get_object_status(synx_obj);
@@ -1856,7 +1870,8 @@ static int synx_internal_get_handle_status(struct synx_import_indv_params *param
 		goto bail;
 	}
 
-	*params->new_h_synx = h_synx;
+	if (is_waiter)
+		*params->new_h_synx = h_synx;
 
 bail:
 	*signal_status = status;
@@ -2676,8 +2691,7 @@ static long synx_ioctl(struct file *filep,
 		return -SYNX_INVALID;
 	}
 
-	dprintk(SYNX_VERB, "[sess :%llu] Enter cmd %u from pid %d\n",
-		(!IS_ERR_OR_NULL(session)? ((struct synx_client *)session)->id : -1),
+	dprintk(SYNX_VERB, "Enter cmd %u from pid %d\n",
 		k_ioctl.id, current->pid);
 
 	switch (k_ioctl.id) {
@@ -2741,9 +2755,7 @@ static long synx_ioctl(struct file *filep,
 		rc = -SYNX_INVALID;
 	}
 
-	dprintk(SYNX_VERB, "[sess :%llu] exit with status %d\n",
-		(!IS_ERR_OR_NULL(session)? ((struct synx_client *)session)->id : -1),
-		rc);
+	dprintk(SYNX_VERB, "exit with status %d\n", rc);
 
 	return rc;
 }
@@ -3082,6 +3094,7 @@ int synx_internal_recover(enum synx_client_id id)
 	case SYNX_CORE_EVA:
 	case SYNX_CORE_IRIS:
 	case SYNX_CORE_ICP:
+	case SYNX_CORE_ICP1:
 		break;
 	default:
 		dprintk(SYNX_ERR, "recovery not supported on %u\n", id);
