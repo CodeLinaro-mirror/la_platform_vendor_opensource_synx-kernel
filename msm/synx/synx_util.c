@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/slab.h>
@@ -12,6 +12,7 @@
 #include "synx_util.h"
 #include "synx_interop.h"
 #include "synx_private.h"
+static atomic64_t seq_counter = ATOMIC64_INIT(1);
 extern void synx_external_callback(s32 sync_obj, int status, void *data);
 
 int synx_util_init_coredata(struct synx_coredata *synx_obj,
@@ -20,6 +21,7 @@ int synx_util_init_coredata(struct synx_coredata *synx_obj,
 	u64 dma_context)
 {
 	int rc = -SYNX_INVALID;
+	u64 seq = 0;
 	spinlock_t *fence_lock;
 	struct dma_fence *fence;
 	struct synx_fence_entry *entry;
@@ -79,8 +81,9 @@ int synx_util_init_coredata(struct synx_coredata *synx_obj,
 			goto free;
 		}
 
+		seq = atomic64_inc_return(&seq_counter);
 		spin_lock_init(fence_lock);
-		dma_fence_init(fence, ops, fence_lock, dma_context, 1);
+		dma_fence_init(fence, ops, fence_lock, dma_context, seq);
 
 		synx_obj->fence = fence;
 		synx_util_activate(synx_obj);
@@ -156,9 +159,9 @@ int synx_util_add_callback(struct synx_coredata *synx_obj,
 		if (rc == -ENOENT) {
 			if (synx_util_is_global_object(synx_obj)) {
 				/* signal (if) global handle */
-				rc = synx_global_update_status(
+				rc = synx_global_update_status_core(
 					synx_obj->global_idx,
-					synx_util_get_object_status(synx_obj));
+					synx_util_get_object_status(synx_obj), false);
 				if (rc != SYNX_SUCCESS)
 					dprintk(SYNX_ERR,
 						"status update of %u with fence %pK\n",
@@ -1728,6 +1731,8 @@ u32 synx_util_map_client_id_to_core(
 		core_id = SYNX_CORE_APSS; break;
 	case SYNX_CLIENT_ICP_CTX0:
 		core_id = SYNX_CORE_ICP; break;
+	case SYNX_CLIENT_ICP1_CTX0:
+		core_id = SYNX_CORE_ICP1; break;
 	case SYNX_CLIENT_EVA_CTX0:
 		core_id = SYNX_CORE_EVA; break;
 	case SYNX_CLIENT_VID_CTX0:
