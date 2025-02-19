@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef __SYNX_PRIVATE_H__
@@ -185,7 +185,7 @@ struct synx_handle_coredata {
 };
 
 struct synx_client {
-	u32 type;
+	struct synx_session session;
 	bool active;
 	struct synx_device *device;
 	char name[SYNX_OBJ_NAME_LEN];

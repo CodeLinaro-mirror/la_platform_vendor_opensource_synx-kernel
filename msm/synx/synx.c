@@ -3091,6 +3091,9 @@ struct synx_session *synx_internal_initialize(
 		params->id >= SYNX_CLIENT_END)
 		return ERR_PTR(-SYNX_NOSUPPORT);
 
+	if (!synx_dev)
+		return ERR_PTR(-SYNX_INVALID);
+
 	client = vzalloc(sizeof(*client));
 	if (IS_ERR_OR_NULL(client)) {
 		dprintk(SYNX_ERR, "client allocation failed\n");
@@ -3110,9 +3113,6 @@ struct synx_session *synx_internal_initialize(
 	init_waitqueue_head(&client->event_wq);
 	/* zero idx not allowed */
 	set_bit(0, client->cb_bitmap);
-
-	if (!synx_dev)
-		return ERR_PTR(-SYNX_INVALID);
 
 	spin_lock_bh(&synx_dev->native->metadata_map_lock);
 	hash_add(synx_dev->native->client_metadata_map,
