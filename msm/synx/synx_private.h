@@ -49,6 +49,11 @@
 
 #define IS_HW_FENCE(hw_fence) (hw_fence & SYNX_HW_FENCE_HANDLE_FLAG)
 
+enum synx_queue_mem_type {
+	SYNX_MEM_DEFAULT = 0x00,
+	SYNX_MEM_MAX,
+};
+
 struct synx_bind_desc {
 	struct synx_external_desc_v2 external_desc;
 	void *external_data;

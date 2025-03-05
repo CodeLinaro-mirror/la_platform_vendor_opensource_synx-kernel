@@ -199,22 +199,25 @@ struct synx_register_params {
 };
 
 /**
- * struct synx_queue_desc - Memory descriptor of the queue allocated by
- *                          the fence driver for each client during
- *                          register. (Clients need not pass any pointer
- *                          in synx_initialize_params. It is for future
- *                          use).
+ * struct synx_queue_desc - Memory descriptor of the queue allocated for
+ *                          hw-fence and fence direct clients during
+ *                          initialize. (Synx native clients need not
+ *                          pass any pointer in synx_initialize_params).
  *
- * @vaddr    : CPU virtual address of the queue.
- * @dev_addr : Physical address of the memory object.
- * @size     : Size of the memory.
- * @mem_data : Internal pointer with the attributes of the allocation.
+ * @vaddr         : CPU virtual address of the queue.
+ * @dev_addr      : Physical address of the memory object.
+ * @size          : Size of the memory.
+ * @mem_data      : Internal pointer with the attributes of the allocation.
+ * @base_offset   : Offset for queue base from start of shared memory.
+ * @wr_idx_offset : Offset for write index from start of shared memory.
  */
 struct synx_queue_desc {
 	void *vaddr;
 	u64 dev_addr;
 	u64 size;
 	void *mem_data;
+	u64 base_offset;
+	u64 wr_idx_offset;
 };
 
 /**

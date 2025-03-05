@@ -2362,7 +2362,7 @@ static int synx_handle_initialize(struct synx_private_ioctl_arg *k_ioctl,
 		return -SYNX_INVALID;
 
 	if (!IS_ERR_OR_NULL(*session)) {
-		dprintk(SYNX_ERR, "Session is already initialized %pK \n", *session);
+		dprintk(SYNX_ERR, "Session is already initialized %pK\n", *session);
 		return -SYNX_ALREADY;
 	}
 
@@ -2377,12 +2377,59 @@ static int synx_handle_initialize(struct synx_private_ioctl_arg *k_ioctl,
 
 	(*session) = synx_initialize(&params);
 	if (IS_ERR_OR_NULL(*session)) {
-		dprintk(SYNX_ERR, "Failed to initialize session, err: %ld \n", PTR_ERR(*session));
+		dprintk(SYNX_ERR, "Failed to initialize session, err: %ld\n", PTR_ERR(*session));
 		return -SYNX_INVALID;
 	}
 
 	return SYNX_SUCCESS;
+}
 
+static int synx_handle_initialize_v3(struct synx_private_ioctl_arg *k_ioctl,
+	struct synx_session **session)
+{
+	struct synx_initialize_v3 init_info;
+	struct synx_initialization_params params = {0};
+	struct synx_queue_desc qdesc = {0};
+
+	if (k_ioctl->size != sizeof(init_info))
+		return -SYNX_INVALID;
+
+	if (!IS_ERR_OR_NULL(*session)) {
+		dprintk(SYNX_ERR, "Session is already initialized %pK\n", *session);
+		return -SYNX_ALREADY;
+	}
+
+	if (copy_from_user(&init_info,
+			u64_to_user_ptr(k_ioctl->ioctl_ptr),
+			k_ioctl->size))
+		return -EFAULT;
+
+	params.id = init_info.id;
+	params.flags = init_info.flags;
+	params.name = init_info.name;
+	params.ptr = &qdesc;
+
+	if (init_info.qdesc.type >= SYNX_MEM_MAX)
+		return -SYNX_INVALID;
+
+	(*session) = synx_initialize(&params);
+	if (IS_ERR_OR_NULL(*session)) {
+		dprintk(SYNX_ERR, "Failed to initialize session, err: %ld\n", PTR_ERR(*session));
+		return -SYNX_INVALID;
+	}
+
+	if (init_info.qdesc.type == SYNX_MEM_DEFAULT) {
+		init_info.qdesc.size = qdesc.size;
+		init_info.qdesc.base_offset = qdesc.base_offset;
+		init_info.qdesc.wr_idx_offset = qdesc.wr_idx_offset;
+	}
+
+	if (copy_to_user(u64_to_user_ptr(k_ioctl->ioctl_ptr),
+			&init_info,
+			k_ioctl->size))
+		return -EFAULT;
+
+	return SYNX_SUCCESS;
 }
 
 static int synx_handle_create(struct synx_private_ioctl_arg *k_ioctl,
@@ -2940,6 +2987,10 @@ static long synx_ioctl(struct file *filep,
 	switch (k_ioctl.id) {
 	case SYNX_INITIALIZE:
 		rc = synx_handle_initialize(&k_ioctl, &session);
+		filep->private_data = session;
+		break;
+	case SYNX_INITIALIZE_V3:
+		rc = synx_handle_initialize_v3(&k_ioctl, &session);
 		filep->private_data = session;
 		break;
 	case SYNX_CREATE:
