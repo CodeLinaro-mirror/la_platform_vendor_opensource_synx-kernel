@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef __SYNX_PRIVATE_H__
@@ -46,6 +46,8 @@
 #define SYNX_CREATE_MERGED_FENCE    (SYNX_CREATE_MAX_FLAGS << 1)
 
 #define SYNX_MAX_REF_COUNTS         100
+
+#define IS_HW_FENCE(hw_fence) (hw_fence & SYNX_HW_FENCE_HANDLE_FLAG)
 
 struct synx_bind_desc {
 	struct synx_external_desc_v2 external_desc;
@@ -96,6 +98,13 @@ struct synx_kernel_payload {
 	void *data;
 	synx_user_callback_t cb_func;
 	synx_user_callback_t cancel_cb_func;
+};
+
+struct synx_timer_cb_data {
+	struct synx_session *session;
+	struct synx_cb_data *synx_cb;
+	u32 h_synx;
+	struct work_struct cb_dispatch;
 };
 
 struct synx_cb_data {
@@ -229,6 +238,8 @@ struct synx_device {
 	struct synx_cdsp_ssr cdsp_ssr;
 };
 
+extern struct synx_ops synx_hwfence_ops;
+
 int synx_signal_core(struct synx_coredata *synx_obj,
 	u32 status,
 	bool cb_signal,
@@ -245,5 +256,62 @@ int synx_native_release_core(struct synx_client *session,
 int synx_bind(struct synx_session *session,
 	u32 h_synx,
 	struct synx_external_desc_v2 external_sync);
+
+struct synx_session *synx_internal_initialize(struct synx_initialization_params *params);
+
+int synx_internal_uninitialize(struct synx_session *session);
+
+int synx_internal_create(struct synx_session *session, struct synx_create_params *params);
+
+int synx_internal_async_wait(struct synx_session *session, struct synx_callback_params *params);
+
+int synx_internal_cancel_async_wait(struct synx_session *session,
+	struct synx_callback_params *params);
+
+int synx_internal_signal(struct synx_session *session, u32 h_synx,
+	enum synx_signal_status status);
+
+int synx_internal_merge(struct synx_session *session, struct synx_merge_params *params);
+
+int synx_internal_wait(struct synx_session *session, u32 h_synx, u64 timeout_ms);
+
+int synx_internal_get_status(struct synx_session *session, u32 h_synx);
+
+int synx_internal_import(struct synx_session *session, struct synx_import_params *params);
+
+void *synx_internal_get_fence(struct synx_session *session, u32 h_synx);
+
+int synx_internal_release(struct synx_session *session, u32 h_synx);
+
+int synx_internal_recover(enum synx_client_id id);
+
+/**
+ * synx_internal_share_handle_status - if synx object is not signaled, update
+ * synx global table with hwfence handle, return synx handle and signal status.
+ * else if synx object is signaled then function will return synx status.
+ *
+ * This API has to be called by hwfence driver during synx_import.
+ *
+ * @param params        : pointer to import params
+ * @param h_hwfence     : hw-fence handle
+ * @param signal_status : signaling status
+ *
+ * @return Status of operation. Negative in case of error. SYNX_SUCCESS otherwise.
+ */
+int synx_internal_share_handle_status(struct synx_import_indv_params *params,
+	u32 h_hwfence, u32 *signal_status);
+
+/**
+ * synx_internal_get_dma_fence - return the dma-fence associated with the
+ * given handle.
+ *
+ * This API will take a reference on dma-fence which has to be released
+ * by the caller.
+ *
+ * @param h_synx : native synx handle
+ *
+ * @return dma-fence pointer on success. Null in case of error.
+ */
+void *synx_internal_get_dma_fence(u32 h_synx);
 
 #endif /* __SYNX_PRIVATE_H__ */

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2019, 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/io.h>
@@ -17,11 +17,11 @@
 #include "synx_global.h"
 #include "synx_debugfs_util.h"
 
-#define MAX_DBG_BUF_SIZE (64 * SYNX_MAX_OBJS)
-#ifdef ENABLE_DEBUGFS
+#define MAX_DBG_BUF_SIZE (16 * SYNX_MAX_OBJS)
+
 #define MAX_HELP_BUF_SIZE (4096)
 #define BUF_SIZE 16
-#endif
+
 
 struct dentry *my_direc;
 u32 lower_handle_id = GLOBAL_HANDLE_STARTING_ID, upper_handle_id = GLOBAL_HANDLE_STARTING_ID;
@@ -39,7 +39,7 @@ void populate_bound_rows(
 	int j;
 
 	for (j = 0; j < row->num_bound_synxs; j++)
-		SYNX_CONSOLE_LOG(cur, end, "\n\tID: %d",
+		SYNX_CONSOLE_LOG(cur, end, "\n\tID: %llu",
 		row->bound_synxs[j].external_desc.id);
 }
 
@@ -59,7 +59,7 @@ static ssize_t synx_table_read(struct file *file,
 
 	cur = dbuf;
 	end = cur + MAX_DBG_BUF_SIZE;
-#ifdef ENABLE_DEBUGFS
+
 	SYNX_CONSOLE_LOG(cur, end, "\n\tHandle ID start value : %d", lower_handle_id);
 	SYNX_CONSOLE_LOG(cur, end, "\n\tHandle ID end value : %d\n", upper_handle_id);
 
@@ -73,7 +73,7 @@ static ssize_t synx_table_read(struct file *file,
 		synx_debugfs_util_print_global_shared_memory(&cur, &end);
 	if (synx_columns & DMA_FENCE_MAP)
 		synx_debugfs_util_print_dma_fence(&cur, &end);
-#endif
+
 
 	if (synx_columns & ERROR_CODES && !list_empty(&dev->error_list)) {
 		SYNX_CONSOLE_LOG(cur, end, "\nError(s): ");
@@ -95,7 +95,6 @@ static ssize_t synx_table_read(struct file *file,
 	return len;
 }
 
-#ifdef ENABLE_DEBUGFS
 static ssize_t synx_table_write(struct file *file,
 		const char __user *buf,
 		size_t count,
@@ -135,18 +134,14 @@ static ssize_t synx_table_write(struct file *file,
 
 	return count;
 }
-#endif
 
 static const struct file_operations synx_table_fops = {
 	.owner = THIS_MODULE,
 	.read = synx_table_read,
-#ifdef ENABLE_DEBUGFS
 	.write = synx_table_write,
-#endif
 	.open = simple_open,
 };
 
-#ifdef ENABLE_DEBUGFS
 static ssize_t synx_help_read(struct file *file,
 		char *buf,
 		size_t count,
@@ -166,11 +161,12 @@ static ssize_t synx_help_read(struct file *file,
 	kfree(dbuf);
 	return len;
 }
+
 static const struct file_operations synx_help_fops = {
 	.owner = THIS_MODULE,
 	.read = synx_help_read,
 };
-#endif
+
 struct dentry *synx_init_debugfs_dir(struct synx_device *dev)
 {
 	struct dentry *dir = NULL;
@@ -187,13 +183,12 @@ struct dentry *synx_init_debugfs_dir(struct synx_device *dev)
 		dprintk(SYNX_ERR, "Failed to create debugfs file for synx\n");
 		return NULL;
 	}
-#ifdef ENABLE_DEBUGFS
+
 	if (!debugfs_create_file("help",
 		0444, dir, dev, &synx_help_fops)) {
 		dprintk(SYNX_ERR, "Failed to create debugfs help file for synx\n");
 		return NULL;
 	}
-#endif
 	return dir;
 }
 

@@ -7,6 +7,10 @@ else
 TARGET_SYNX_ENABLE := true
 endif
 
+ifeq ($(TARGET_BOARD_PLATFORM), gen5)
+TARGET_SYNX_ENABLE := false
+endif
+
 ifeq ($(TARGET_SYNX_ENABLE),true)
 SYNX_BLD_DIR := $(TOP)/vendor/qcom/opensource/synx-kernel
 
@@ -16,6 +20,9 @@ SYNX_BLD_DIR := $(TOP)/vendor/qcom/opensource/synx-kernel
 # This is set once per LOCAL_PATH, not per (kernel) module
 KBUILD_OPTIONS := SYNX_ROOT=$(SYNX_BLD_DIR)
 KBUILD_OPTIONS += BOARD_PLATFORM=$(TARGET_BOARD_PLATFORM)
+ifeq ($(CONFIG_QTI_HW_FENCE),y)
+KBUILD_OPTIONS += KBUILD_EXTRA_SYMBOLS+=$(PWD)/$(call intermediates-dir-for,DLKM,hw-fence-module-symvers)/Module.symvers
+endif
 ###########################################################
 
 DLKM_DIR   := $(TOP)/device/qcom/common/dlkm
@@ -42,6 +49,10 @@ $(info LOCAL_SRC_FILES = $(LOCAL_SRC_FILES))
 LOCAL_MODULE      := synx-driver.ko
 LOCAL_MODULE_KBUILD_NAME := msm/synx/synx-driver.ko
 LOCAL_MODULE_PATH := $(KERNEL_MODULES_OUT)
+ifeq ($(CONFIG_QTI_HW_FENCE),y)
+LOCAL_REQUIRED_MODULES    := hw-fence-module-symvers
+LOCAL_ADDITIONAL_DEPENDENCIES := $(call intermediates-dir-for,DLKM,hw-fence-module-symvers)/Module.symvers
+endif
 include $(DLKM_DIR)/Build_external_kernelmodule.mk
 
 
@@ -65,7 +76,7 @@ LOCAL_MODULE_PATH := $(KERNEL_MODULES_OUT)
 #BOARD_VENDOR_KERNEL_MODULES += $(LOCAL_MODULE_PATH)/$(LOCAL_MODULE)
 
 # print out variables
-$(info KBUILD_OPTIONS = $(KBUILD_OPTIONS))
+#$(info KBUILD_OPTIONS = $(KBUILD_OPTIONS))
 $(info LOCAL_ADDITIONAL_DEPENDENCY = $(LOCAL_ADDITIONAL_DEPENDENCY))
 $(info LOCAL_ADDITIONAL_DEPENDENCIES = $(LOCAL_ADDITIONAL_DEPENDENCIES))
 $(info LOCAL_REQUIRED_MODULES = $(LOCAL_REQUIRED_MODULES))

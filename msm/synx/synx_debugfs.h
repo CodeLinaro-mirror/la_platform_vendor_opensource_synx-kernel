@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2019, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef __SYNX_DEBUGFS_H__
@@ -11,7 +11,7 @@
 #include <linux/delay.h>
 
 #include "synx_private.h"
-//#define ENABLE_DEBUGFS
+
 #define STATE_NAME_SPACE (4)
 
 enum synx_debug_level {
@@ -101,9 +101,7 @@ static inline char *synx_debug_str(int level)
 		__fmt_string, arg...)                           \
 	do {                                                \
 		if ((__end - __cur) * (sizeof(char *))          \
-			- strlen(__fmt_string) <= STATE_NAME_SPACE) \
-			dprintk(SYNX_DBG, __fmt_string, ## arg);    \
-		else                                            \
+			- strlen(__fmt_string) > STATE_NAME_SPACE) \
 			__cur += scnprintf(__cur, __end - __cur,    \
 			__fmt_string, ## arg);                      \
 	} while (0)

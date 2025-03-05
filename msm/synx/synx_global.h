@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2022-2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef __SYNX_SHARED_MEM_H__
@@ -10,14 +10,16 @@
 #include "ipclite_client.h"
 
 #include <synx_header.h>
+
 /**
  * enum synx_core_id - Synx core IDs
  *
- * SYNX_CORE_APSS : APSS core
- * SYNX_CORE_NSP  : NSP core
- * SYNX_CORE_EVA  : EVA core
- * SYNX_CORE_IRIS : IRIS core
- * SYNX_CORE_ICP  : ICP core
+ * SYNX_CORE_APSS     : APSS core
+ * SYNX_CORE_NSP      : NSP core
+ * SYNX_CORE_EVA      : EVA core
+ * SYNX_CORE_IRIS     : IRIS core
+ * SYNX_CORE_ICP      : ICP core
+ * SYNX_CORE_ICP1     : OFE ICP core
  */
 enum synx_core_id {
 	SYNX_CORE_APSS = 0,
@@ -25,6 +27,8 @@ enum synx_core_id {
 	SYNX_CORE_EVA,
 	SYNX_CORE_IRIS,
 	SYNX_CORE_ICP,
+	SYNX_CORE_SOCCP,
+	SYNX_CORE_ICP1,
 	SYNX_CORE_MAX,
 };
 
@@ -45,6 +49,14 @@ enum synx_core_id {
 /* spin lock timeout (ms) */
 #define SYNX_HWSPIN_TIMEOUT            500
 #define SYNX_HWSPIN_ID                 10
+
+/* internal signal states */
+#define SYNX_STATE_INVALID             0
+#define SYNX_STATE_ACTIVE              1
+#define SYNX_STATE_SIGNALED_ERROR      3
+#define SYNX_STATE_SIGNALED_EXTERNAL   5
+#define SYNX_STATE_SIGNALED_SSR        6
+#define SYNX_STATE_TIMEOUT             7
 
 /* dma fence states */
 #define SYNX_DMA_FENCE_STATE_MAX             4096
@@ -70,6 +82,7 @@ struct synx_global_coredata {
 	u16 subscribers;
 	u16 waiters;
 	u16 parents[SYNX_GLOBAL_MAX_PARENTS];
+	u32 h_hwfence;
 };
 
 /**
@@ -85,9 +98,12 @@ struct synx_shared_mem {
 	struct synx_global_coredata *table;
 };
 
+// Forward declaring this structure which will be found in synx_interop.h
+struct synx_hwfence_interops;
+
 static inline bool synx_is_valid_idx(u32 idx)
 {
-	if (idx < SYNX_GLOBAL_MAX_OBJS)
+	if (idx != 0 && idx < SYNX_GLOBAL_MAX_OBJS)
 		return true;
 	return false;
 }
@@ -223,6 +239,19 @@ u32 synx_global_test_status_set_wait(u32 idx,
 int synx_global_update_status(u32 idx, u32 status);
 
 /**
+ * synx_global_update_status_core - Update status of the global entry
+ *
+ * @param idx          : Global entry index
+ * @param status       : status of handle
+ * @param is_recursion : false if called from a different function;
+ *                       accordingly rejects signals on parent handle.
+ *
+ * @return SYNX_SUCCESS on success. Negative error on failure.
+ */
+
+int synx_global_update_status_core(u32 idx, u32 status, bool is_recursion);
+
+/**
  * synx_global_get_ref - Get additional reference on global entry
  *
  * @param idx : Global entry index
@@ -298,8 +327,58 @@ int synx_global_dump_shared_memory(void);
  */
 int synx_global_fetch_handle_details(u32 idx, u32 *h_synx);
 
+/**
+ * synx_global_test_status_update_coredata - Check status and if handle is not
+ * signaled then take reference on global entry, add core as waiter and
+ * subscriber, add hwfence mapping
+ *
+ * This tests and adds the waiter and hwfence in one atomic operation, to avoid
+ * race with signal which can miss sending the IPC signal or mismatch in synx
+ * to hw fence entries if these operations are done separately
+ * (signal coming in between the two ops).
+ *
+ * @param idx       : Global entry index
+ * @param id        : Core to be set as waiter and subscriber (if unsignaled)
+ * @param h_hwfence : hw_fence handle to be mapped.
+ * @param is_waiter : Flag to set core as waiter.
+ *
+ * @return Status of global entry idx.
+ */
+int synx_global_test_status_update_coredata(u32 idx,
+	enum synx_core_id id, u32 h_hwfence,
+	bool is_waiter);
+
+
 /* Function to fetch global shared memory entry */
 bool synx_fetch_global_shared_memory_handle_details(u32 synx_handle,
 	struct synx_global_coredata *synx_global_entry);
 
+/**
+ * synx_global_recover_index - Recover handle subscribed by specific core
+ *
+ * In case of any hw-fence client SSR, the core_id will be SOCCP.
+ *
+ * @param core_id       : Crashed core id
+ * @param global_unlock : Check if global hw lock has to be unlocked
+ * @param idx           : Global entry index
+ * @param status        : Signaling status
+ *
+ * @return SYNX_SUCCESS on success. Negative error on failure.
+ */
+int synx_global_recover_index(enum synx_core_id core_id, bool global_unlock,
+	u32 idx, u32 status);
+
+/**
+ * synx_global_recover_interop - Recover handles subscribed by specific core
+ *
+ * In case of synx producer fences, synx_hwfence_signal_fence has to be called
+ * to notify hwfence consumer about SSR status.
+ *
+ * @param core_id            : Crashed core id
+ * @param hwfence_shared_ops : Internal ops used by hw-fence and synx drivers
+ *
+ * @return SYNX_SUCCESS on success. Negative error on failure.
+ */
+int synx_global_recover_interop(enum synx_core_id core_id,
+	struct synx_hwfence_interops *hwfence_shared_ops);
 #endif /* __SYNX_SHARED_MEM_H__ */

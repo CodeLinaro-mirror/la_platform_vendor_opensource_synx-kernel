@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2024-2025, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #include <linux/slab.h>
@@ -41,7 +41,25 @@ char *synx_debugfs_util_get_state_name(u32 status)
 	return state;
 }
 
-static int synx_debugfs_util_get_client_data(struct synx_client *client)
+static inline bool synx_debugfs_util_is_valid_handle(u32 h_synx)
+{
+	u32 core_id, max_synx_handle_ID;
+
+	max_synx_handle_ID = synx_encode_handle(SYNX_GLOBAL_MAX_OBJS - 1,
+		SYNX_CORE_MAX - 1, true);
+	if (h_synx < GLOBAL_HANDLE_STARTING_ID || h_synx > max_synx_handle_ID)
+		return false;
+
+	core_id = (h_synx & SYNX_OBJ_CORE_ID_MASK)
+					>> SYNX_HANDLE_INDEX_BITS;
+	if (core_id >= SYNX_CORE_MAX)
+		return false;
+
+	return synx_is_valid_idx(h_synx & SYNX_OBJ_HANDLE_MASK)
+			&& synx_util_is_global_handle(h_synx);
+}
+
+static inline int synx_debugfs_util_get_client_data(struct synx_client *client)
 {
 	if (IS_ERR_OR_NULL(client))
 		return -SYNX_NOENT;
@@ -49,13 +67,13 @@ static int synx_debugfs_util_get_client_data(struct synx_client *client)
 	return SYNX_SUCCESS;
 }
 
-static void synx_debugfs_util_put_client_data(struct synx_client *client)
+static inline void synx_debugfs_util_put_client_data(struct synx_client *client)
 {
 	if (!IS_ERR_OR_NULL(client))
 		kref_put(&client->refcount, synx_client_destroy);
 }
 
-static int synx_debugfs_util_get_handle(struct synx_handle_coredata *handle_coredata)
+static inline int synx_debugfs_util_get_handle(struct synx_handle_coredata *handle_coredata)
 {
 	if (IS_ERR_OR_NULL(handle_coredata))
 		return -SYNX_NOENT;
@@ -63,13 +81,13 @@ static int synx_debugfs_util_get_handle(struct synx_handle_coredata *handle_core
 	return SYNX_SUCCESS;
 }
 
-static void synx_debugfs_util_put_handle(struct synx_handle_coredata *handle_coredata)
+static inline void synx_debugfs_util_put_handle(struct synx_handle_coredata *handle_coredata)
 {
 	if (!IS_ERR_OR_NULL(handle_coredata))
 		kref_put(&handle_coredata->refcount, synx_util_destroy_handle);
 }
 
-static int synx_debugfs_util_get_CSL_fence_entry(struct synx_entry_64 *entry)
+static inline int synx_debugfs_util_get_CSL_fence_entry(struct synx_entry_64 *entry)
 {
 	if (IS_ERR_OR_NULL(entry))
 		return -SYNX_NOENT;
@@ -77,19 +95,17 @@ static int synx_debugfs_util_get_CSL_fence_entry(struct synx_entry_64 *entry)
 	return SYNX_SUCCESS;
 }
 
-static void synx_debugfs_util_put_CSL_fence_entry(struct synx_entry_64 *entry)
+static inline void synx_debugfs_util_put_CSL_fence_entry(struct synx_entry_64 *entry)
 {
 	if (!IS_ERR_OR_NULL(entry))
 		kref_put(&entry->refcount, synx_util_destroy_data);
 }
 
 bool synx_debugfs_util_is_valid_global_shared_memory_entry(struct synx_global_coredata *entry,
-	u32 idx)
+	u32 handle)
 {
 	int i;
 
-	if (!entry || entry->handle != idx)
-		return false;
 	if (entry->status || entry->handle || entry->refcount ||
 	 entry->num_child || entry->subscribers || entry->waiters)
 		return true;
@@ -260,7 +276,7 @@ void synx_debugfs_util_print_csl_fence(char **cur,
 		}
 		if (curr->data[0] >= lower_handle_id && curr->data[0] <= upper_handle_id) {
 			if (synx_columns & FENCE_COLUMN)
-				SYNX_CONSOLE_LOG(*cur, *end, "%p", curr->key);
+				SYNX_CONSOLE_LOG(*cur, *end, "%llu", curr->key);
 			if (synx_columns & STATUS_COLUMN) {
 				map_entry = synx_util_get_map_entry(curr->data[0]);
 				if (!IS_ERR_OR_NULL(map_entry) &&
@@ -288,16 +304,17 @@ void synx_debugfs_util_print_global_shared_memory(char **cur,
 	char **end)
 {
 	struct synx_global_coredata synx_global_entry;
-	u32 i, idx;
+	u32 i, handle;
 
 	/* Column heading set up*/
 	SYNX_CONSOLE_LOG(*cur, *end,
 				"\n\t  ------------- GLOBAL SHARED MEMORY ------------\n\t");
 
+	SYNX_CONSOLE_LOG(*cur, *end, "| IDX |");
 	if (synx_columns & STATUS_COLUMN)
 		SYNX_CONSOLE_LOG(*cur, *end, "|  STATUS  |");
 	if (synx_columns & ID_COLUMN)
-		SYNX_CONSOLE_LOG(*cur, *end, "|  HANDLE  |");
+		SYNX_CONSOLE_LOG(*cur, *end, "|  HANDLE   |");
 	if (synx_columns & REF_CNT_COLUMN)
 		SYNX_CONSOLE_LOG(*cur, *end, "|  REF CNT |");
 	if (synx_columns & NUM_CHILD_COLUMN)
@@ -310,12 +327,14 @@ void synx_debugfs_util_print_global_shared_memory(char **cur,
 		SYNX_CONSOLE_LOG(*cur, *end, "|    PARENTS    |");
 	SYNX_CONSOLE_LOG(*cur, *end, "\n");
 
-	for (idx = lower_handle_id ; idx <= upper_handle_id ; idx++) {
-		if (!synx_fetch_global_shared_memory_handle_details(idx, &synx_global_entry) ||
-		!synx_debugfs_util_is_valid_global_shared_memory_entry(&synx_global_entry, idx))
+	for (handle = lower_handle_id ; handle <= upper_handle_id ; handle++) {
+		if (!synx_debugfs_util_is_valid_handle(handle) ||
+			!synx_fetch_global_shared_memory_handle_details(handle, &synx_global_entry) ||
+			!synx_debugfs_util_is_valid_global_shared_memory_entry(&synx_global_entry, handle))
 			continue;
+		SYNX_CONSOLE_LOG(*cur, *end, "\t  %llu", handle & SYNX_OBJ_HANDLE_MASK);
 		if (synx_columns & STATUS_COLUMN)
-			SYNX_CONSOLE_LOG(*cur, *end, "\t   %s",
+			SYNX_CONSOLE_LOG(*cur, *end, "\t %s",
 			synx_debugfs_util_get_state_name(synx_global_entry.status));
 		if (synx_columns & ID_COLUMN)
 			SYNX_CONSOLE_LOG(*cur, *end, "\t\t%x", synx_global_entry.handle);
@@ -326,7 +345,7 @@ void synx_debugfs_util_print_global_shared_memory(char **cur,
 		if (synx_columns & SUBSCRIBERS_COLUMN)
 			SYNX_CONSOLE_LOG(*cur, *end, "\t%d", synx_global_entry.subscribers);
 		if (synx_columns & WAITERS_COLUMN)
-			SYNX_CONSOLE_LOG(*cur, *end, "\t\t%d", synx_global_entry.waiters);
+			SYNX_CONSOLE_LOG(*cur, *end, "\t\t%d\t", synx_global_entry.waiters);
 		if (synx_columns & PARENTS_COLUMN) {
 			for (i = 0; i < SYNX_GLOBAL_MAX_PARENTS; i++) {
 				if (synx_global_entry.parents[i])
@@ -334,9 +353,9 @@ void synx_debugfs_util_print_global_shared_memory(char **cur,
 					synx_global_entry.parents[i]);
 			}
 		}
-		SYNX_CONSOLE_LOG(*cur, *end, "\n\t-------------------------------------");
+		SYNX_CONSOLE_LOG(*cur, *end, "\n\t\t-------------------------------------");
 		SYNX_CONSOLE_LOG(*cur, *end, "-----------------------------------------");
-		SYNX_CONSOLE_LOG(*cur, *end, "-----------\n");
+		SYNX_CONSOLE_LOG(*cur, *end, "------------------\n");
 	}
 }
 
@@ -379,7 +398,7 @@ void synx_debugfs_util_print_client_table(char **cur,
 			}
 			if (curr2->key >= lower_handle_id && curr2->key <= upper_handle_id) {
 				if (synx_columns & CLIENT_ID_COLUMN)
-					SYNX_CONSOLE_LOG(*cur, *end, "\t%u", curr->id);
+					SYNX_CONSOLE_LOG(*cur, *end, "\t%llu", curr->id);
 				if (synx_columns & REF_CNT_COLUMN)
 					SYNX_CONSOLE_LOG(*cur, *end, "\t\t%d",
 					kref_read(&curr->refcount));
