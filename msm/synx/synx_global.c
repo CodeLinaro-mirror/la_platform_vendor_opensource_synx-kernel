@@ -873,8 +873,9 @@ int synx_global_merge(u32 *idx_list, u32 num_list, u32 p_idx)
 	struct synx_global_coredata *synx_g_obj;
 	u32 i, j = 0;
 	u32 idx;
-	u32 num_child = 0;
+	u32 num_child_signaled = 0;
 	u32 parent_status = SYNX_STATE_ACTIVE;
+	int err = SYNX_SUCCESS;
 
 	if (!synx_gmem.table) {
 		dprintk(SYNX_ERR, "synx_gmem is NULL\n");
@@ -888,6 +889,16 @@ int synx_global_merge(u32 *idx_list, u32 num_list, u32 p_idx)
 
 	if (num_list == 0)
 		return SYNX_SUCCESS;
+
+	rc = synx_gmem_lock(p_idx, &flags);
+	if (rc)
+		return rc;
+	synx_g_obj = &synx_gmem.table[p_idx];
+	if (synx_g_obj->handle && synx_g_obj->refcount) {
+		synx_g_obj->num_child += num_list;
+		synx_g_obj->refcount++;
+	}
+	synx_gmem_unlock(p_idx, &flags);
 
 	while (j < num_list) {
 		idx = idx_list[j];
@@ -910,17 +921,17 @@ int synx_global_merge(u32 *idx_list, u32 num_list, u32 p_idx)
 				break;
 			}
 		}
-		if (synx_g_obj->status == SYNX_STATE_ACTIVE)
-			num_child++;
-		else if (synx_g_obj->status >
-			SYNX_STATE_SIGNALED_SUCCESS &&
-			synx_g_obj->status <= SYNX_STATE_SIGNALED_MAX)
-			parent_status = synx_g_obj->status;
-		else if (parent_status == SYNX_STATE_ACTIVE)
-			parent_status = synx_g_obj->status;
 
-		if (synx_g_obj->status != SYNX_STATE_ACTIVE && synx_g_obj->num_child != 0)
-			num_child++;
+		if (synx_g_obj->status != SYNX_STATE_ACTIVE) {
+			if (synx_g_obj->num_child == 0)
+				num_child_signaled += 1;
+			if (synx_g_obj->status >
+				SYNX_STATE_SIGNALED_SUCCESS &&
+				synx_g_obj->status <= SYNX_STATE_SIGNALED_MAX)
+				parent_status = synx_g_obj->status;
+			else if (parent_status == SYNX_STATE_ACTIVE)
+				parent_status = synx_g_obj->status;
+		}
 
 		dprintk(SYNX_MEM, "synx_obj->status %d parent status %d\n",
 			synx_g_obj->status, parent_status);
@@ -928,6 +939,8 @@ int synx_global_merge(u32 *idx_list, u32 num_list, u32 p_idx)
 
 		if (i >= SYNX_GLOBAL_MAX_PARENTS) {
 			rc = -SYNX_NOMEM;
+			dprintk(SYNX_ERR, "Number of parents exceeded the limit for handle %u\n",
+				synx_g_obj->handle);
 			goto fail;
 		}
 
@@ -938,30 +951,32 @@ int synx_global_merge(u32 *idx_list, u32 num_list, u32 p_idx)
 	if (rc)
 		goto fail;
 	synx_g_obj = &synx_gmem.table[p_idx];
-	synx_g_obj->num_child += num_child;
-	if (synx_g_obj->num_child != 0)
-		synx_g_obj->refcount++;
-	synx_g_obj->status = parent_status;
+	synx_g_obj->num_child -= num_child_signaled;
+	if (synx_g_obj->num_child == 0 && num_child_signaled)
+		synx_g_obj->refcount -= 1;
+	if (synx_g_obj->status == SYNX_STATE_ACTIVE ||
+		((parent_status > SYNX_STATE_SIGNALED_SUCCESS &&
+		parent_status <= SYNX_STATE_SIGNALED_MAX) &&
+		!(synx_g_obj->status > SYNX_STATE_SIGNALED_SUCCESS &&
+		synx_g_obj->status <= SYNX_STATE_SIGNALED_MAX)))
+		synx_g_obj->status = parent_status;
 	synx_global_print_data(synx_g_obj, __func__);
 	synx_gmem_unlock(p_idx, &flags);
 
 	return SYNX_SUCCESS;
 
 fail:
-	while (num_child--) {
-		idx = idx_list[num_child];
+	err = synx_gmem_lock(p_idx, &flags);
+	if (err)
+		return err;
 
-		if (synx_gmem_lock(idx, &flags))
-			continue;
-		synx_g_obj = &synx_gmem.table[idx];
-		for (i = 0; i < SYNX_GLOBAL_MAX_PARENTS; i++) {
-			if (synx_g_obj->parents[i] == p_idx) {
-				synx_g_obj->parents[i] = 0;
-				break;
-			}
-		}
-		synx_gmem_unlock(idx, &flags);
-	}
+	synx_g_obj = &synx_gmem.table[p_idx];
+	synx_g_obj->num_child -= (num_child_signaled + (num_list - j));
+	synx_g_obj->status = SYNX_STATE_SIGNALED_ERROR;
+	if (synx_g_obj->num_child == 0)
+		synx_g_obj->refcount -= 1;
+
+	synx_gmem_unlock(p_idx, &flags);
 
 	return rc;
 }
