@@ -209,9 +209,9 @@ int ipclite_hw_mutex_release(void)
 }
 EXPORT_SYMBOL(ipclite_hw_mutex_release);
 
-bool get_ipclite_feature(enum ipclite_feature_mask feature_mask)
+bool get_ipclite_feature(enum ipclite_feature_mask feature)
 {
-	return !!(IS_FEATURE_CONFIG(feature_mask));
+	return !!(feature_mask & feature);
 }
 EXPORT_SYMBOL(get_ipclite_feature);
 
