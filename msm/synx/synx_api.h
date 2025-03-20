@@ -244,6 +244,17 @@ struct synx_queue_desc {
  * @SYNX_CLIENT_HW_FENCE_IFE15_CTX0 : HW Fence IFE15 Client 0
  * @SYNX_CLIENT_HW_FENCE_TEST_CTX0  : HW Fence Test Client 0
  * @SYNX_CLIENT_HW_FENCE_IPA_CTX0   : HW Fence IPA Client 0
+ * @SYNX_CLIENT_HW_FENCE_LSR0_CTX0  : HW Fence LSR0 Client 0
+ * @SYNX_CLIENT_HW_FENCE_LSR1_CTX0  : HW Fence LSR1 Client 0
+ * @SYNX_CLIENT_HW_FENCE_DCP0_CTX0  : HW Fence DCP0 Client 0
+ * @SYNX_CLIENT_HW_FENCE_DCP1_CTX0  : HW Fence DCP1 Client 0
+ * @SYNX_CLIENT_HW_FENCE_GFX1_CTX0  : HW Fence GFX1 Client 0
+ * @SYNX_CLIENT_HW_FENCE_VID1_CTX0  : HW Fence VID1 Client 0
+ * @SYNX_CLIENT_HW_FENCE_IPA1_CTX0  : HW Fence IPA1 Client 0
+ * @SYNX_CLIENT_HW_FENCE_TEST1_CTX0 : HW Fence TEST1 Client 0
+ * @SYNX_CLIENT_HW_FENCE_TEST2_CTX0 : HW Fence TEST2 Client 0
+ * @SYNX_CLIENT_HW_FENCE_TEST3_CTX0 : HW Fence TEST3 Client 0
+ * @SYNX_CLIENT_HW_FENCE_TEST4_CTX0 : HW Fence TEST4 Client 0
  */
 enum synx_client_id {
 	SYNX_CLIENT_NATIVE = 0,
@@ -302,6 +313,28 @@ enum synx_client_id {
 	SYNX_CLIENT_HW_FENCE_TEST_CTX0 = SYNX_CLIENT_HW_FENCE_IFE15_CTX0 +
 		SYNX_MAX_SIGNAL_PER_CLIENT,
 	SYNX_CLIENT_HW_FENCE_IPA_CTX0 = SYNX_CLIENT_HW_FENCE_TEST_CTX0 +
+		SYNX_MAX_SIGNAL_PER_CLIENT,
+	SYNX_CLIENT_HW_FENCE_LSR0_CTX0 = SYNX_CLIENT_HW_FENCE_IPA_CTX0 +
+		SYNX_MAX_SIGNAL_PER_CLIENT,
+	SYNX_CLIENT_HW_FENCE_LSR1_CTX0 = SYNX_CLIENT_HW_FENCE_LSR0_CTX0 +
+		SYNX_MAX_SIGNAL_PER_CLIENT,
+	SYNX_CLIENT_HW_FENCE_DCP0_CTX0 = SYNX_CLIENT_HW_FENCE_LSR1_CTX0 +
+		SYNX_MAX_SIGNAL_PER_CLIENT,
+	SYNX_CLIENT_HW_FENCE_DCP1_CTX0 = SYNX_CLIENT_HW_FENCE_DCP0_CTX0 +
+		SYNX_MAX_SIGNAL_PER_CLIENT,
+	SYNX_CLIENT_HW_FENCE_GFX1_CTX0 = SYNX_CLIENT_HW_FENCE_DCP1_CTX0 +
+		SYNX_MAX_SIGNAL_PER_CLIENT,
+	SYNX_CLIENT_HW_FENCE_VID1_CTX0 = SYNX_CLIENT_HW_FENCE_GFX1_CTX0 +
+		SYNX_MAX_SIGNAL_PER_CLIENT,
+	SYNX_CLIENT_HW_FENCE_IPA1_CTX0 = SYNX_CLIENT_HW_FENCE_VID1_CTX0 +
+		SYNX_MAX_SIGNAL_PER_CLIENT,
+	SYNX_CLIENT_HW_FENCE_TEST1_CTX0 = SYNX_CLIENT_HW_FENCE_IPA1_CTX0 +
+		SYNX_MAX_SIGNAL_PER_CLIENT,
+	SYNX_CLIENT_HW_FENCE_TEST2_CTX0 = SYNX_CLIENT_HW_FENCE_TEST1_CTX0 +
+		SYNX_MAX_SIGNAL_PER_CLIENT,
+	SYNX_CLIENT_HW_FENCE_TEST3_CTX0 = SYNX_CLIENT_HW_FENCE_TEST2_CTX0 +
+		SYNX_MAX_SIGNAL_PER_CLIENT,
+	SYNX_CLIENT_HW_FENCE_TEST4_CTX0 = SYNX_CLIENT_HW_FENCE_TEST3_CTX0 +
 		SYNX_MAX_SIGNAL_PER_CLIENT,
 	SYNX_CLIENT_MAX = SYNX_HW_FENCE_CLIENT_END,
 };
@@ -616,24 +649,28 @@ struct synx_read_n_params {
 /**
  * enum synx_get_type - Synx get params type
  *
- * SYNX_GET_STATUS_PARAMS : Get synx signaling status
- * SYNX_GET_FENCE_PARAMS  : Get native fence associated with synx object
- * SYNX_GET_CLIENT_DATA   : Get 64-bit client metadata associated with synx object
+ * SYNX_GET_STATUS_PARAMS     : Get synx signaling status
+ * SYNX_GET_FENCE_PARAMS      : Get native fence associated with synx object
+ * SYNX_GET_CLIENT_DATA       : Get 64-bit client metadata associated with synx object
+ * SYNX_GET_MAX_GLOBAL_FENCES : Get maximum number of fences used for cross-core signaling
  */
 enum synx_get_type {
 	SYNX_GET_STATUS_PARAMS = 0x01,
 	SYNX_GET_FENCE_PARAMS = 0x02,
 	SYNX_GET_CLIENT_DATA = 0x03,
+	SYNX_GET_MAX_GLOBAL_FENCES = 0x04,
 };
 
 /**
  * struct synx_get_params - Synx get parameters
  *
- * @type        : Get params type filled by client
- * @h_synx      : handle of synx object filled by client
- * @status      : signaling status of synx object, filled by function call
- * @fence       : native fence associated with synx object, filled by function call
- * @client_data : 64-bit client metadata associated with synx object, filled by function call
+ * @type              : Get params type filled by client
+ * @h_synx            : handle of synx object filled by client
+ * @status            : signaling status of synx object, filled by function call
+ * @fence             : native fence associated with synx object, filled by function call
+ * @client_data       : 64-bit client metadata associated with synx object, filled by function call
+ * @max_global_fences : maximum number of fences used for cross-core signaling, filled by
+ *                      function call
  */
 struct synx_get_params {
 	enum synx_get_type type;
@@ -642,6 +679,7 @@ struct synx_get_params {
 		enum synx_signal_status status;
 		void *fence;
 		u64 client_data;
+		u64 max_global_fences;
 	};
 };
 

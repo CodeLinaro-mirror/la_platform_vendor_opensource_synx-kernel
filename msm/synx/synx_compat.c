@@ -49,18 +49,24 @@ struct synx_session *synx_initialize(struct synx_initialization_params *params)
 {
 	struct synx_session *session = NULL;
 
-	if (IS_ERR_OR_NULL(params))
+	if (IS_ERR_OR_NULL(params)) {
+		dprintk(SYNX_ERR, "invalid params\n");
 		return ERR_PTR(-SYNX_INVALID);
+	}
 
 	if (is_hw_fence_client(params->id)) {
 		session = synx_hwfence_initialize(params);
-		if (IS_ERR_OR_NULL(session))
+		if (IS_ERR_OR_NULL(session)) {
+			dprintk(SYNX_ERR, "invalid session\n");
 			return session;
+		}
 		session->ops = &synx_hwfence_ops;
 	} else {
 		session = synx_internal_initialize(params);
-		if (IS_ERR_OR_NULL(session))
+		if (IS_ERR_OR_NULL(session)) {
+			dprintk(SYNX_ERR, "invalid session\n");
 			return session;
+		}
 		session->ops = &synx_internal_ops;
 	}
 	return session;
@@ -69,40 +75,50 @@ EXPORT_SYMBOL(synx_initialize);
 
 int synx_uninitialize(struct synx_session *session)
 {
-	if (IS_ERR_OR_NULL(session) || !session->ops || !session->ops->uninitialize)
+	if (IS_ERR_OR_NULL(session) || !session->ops || !session->ops->uninitialize) {
+		dprintk(SYNX_ERR, "invalid session\n");
 		return -SYNX_INVALID;
+	}
 	return session->ops->uninitialize(session);
 }
 EXPORT_SYMBOL(synx_uninitialize);
 
 int synx_create(struct synx_session *session, struct synx_create_params *params)
 {
-	if (IS_ERR_OR_NULL(session) || !session->ops || !session->ops->create)
+	if (IS_ERR_OR_NULL(session) || !session->ops || !session->ops->create) {
+		dprintk(SYNX_ERR, "invalid session\n");
 		return -SYNX_INVALID;
+	}
 	return session->ops->create(session, params);
 }
 EXPORT_SYMBOL(synx_create);
 
 int synx_release(struct synx_session *session, u32 h_synx)
 {
-	if (IS_ERR_OR_NULL(session) || !session->ops || !session->ops->release)
+	if (IS_ERR_OR_NULL(session) || !session->ops || !session->ops->release) {
+		dprintk(SYNX_ERR, "invalid session\n");
 		return -SYNX_INVALID;
+	}
 	return session->ops->release(session, h_synx);
 }
 EXPORT_SYMBOL(synx_release);
 
 int synx_signal(struct synx_session *session, u32 h_synx, enum synx_signal_status status)
 {
-	if (IS_ERR_OR_NULL(session) || !session->ops || !session->ops->signal)
+	if (IS_ERR_OR_NULL(session) || !session->ops || !session->ops->signal) {
+		dprintk(SYNX_ERR, "invalid session\n");
 		return -SYNX_INVALID;
+	}
 	return session->ops->signal(session, h_synx, status);
 }
 EXPORT_SYMBOL(synx_signal);
 
 int synx_async_wait(struct synx_session *session, struct synx_callback_params *params)
 {
-	if (IS_ERR_OR_NULL(session) || !session->ops || !session->ops->async_wait)
+	if (IS_ERR_OR_NULL(session) || !session->ops || !session->ops->async_wait) {
+		dprintk(SYNX_ERR, "invalid session\n");
 		return -SYNX_INVALID;
+	}
 	return session->ops->async_wait(session, params);
 }
 EXPORT_SYMBOL(synx_async_wait);
@@ -123,40 +139,50 @@ EXPORT_SYMBOL(synx_recover);
 
 void *synx_get_fence(struct synx_session *session, u32 h_synx)
 {
-	if (IS_ERR_OR_NULL(session) || !session->ops || !session->ops->get_fence)
+	if (IS_ERR_OR_NULL(session) || !session->ops || !session->ops->get_fence) {
+		dprintk(SYNX_ERR, "invalid session\n");
 		return ERR_PTR(-SYNX_INVALID);
+	}
 	return session->ops->get_fence(session, h_synx);
 }
 EXPORT_SYMBOL(synx_get_fence);
 
 int synx_import(struct synx_session *session, struct synx_import_params *params)
 {
-	if (IS_ERR_OR_NULL(session) || !session->ops || !session->ops->import)
+	if (IS_ERR_OR_NULL(session) || !session->ops || !session->ops->import) {
+		dprintk(SYNX_ERR, "invalid session\n");
 		return -SYNX_INVALID;
+	}
 	return session->ops->import(session, params);
 }
 EXPORT_SYMBOL(synx_import);
 
 int synx_get_status(struct synx_session *session, u32 h_synx)
 {
-	if (IS_ERR_OR_NULL(session) || !session->ops || !session->ops->get_status)
+	if (IS_ERR_OR_NULL(session) || !session->ops || !session->ops->get_status) {
+		dprintk(SYNX_ERR, "invalid session\n");
 		return -SYNX_INVALID;
+	}
 	return session->ops->get_status(session, h_synx);
 }
 EXPORT_SYMBOL(synx_get_status);
 
 int synx_merge(struct synx_session *session, struct synx_merge_params *params)
 {
-	if (IS_ERR_OR_NULL(session) || !session->ops || !session->ops->merge)
+	if (IS_ERR_OR_NULL(session) || !session->ops || !session->ops->merge) {
+		dprintk(SYNX_ERR, "invalid session\n");
 		return -SYNX_INVALID;
+	}
 	return session->ops->merge(session, params);
 }
 EXPORT_SYMBOL(synx_merge);
 
 int synx_wait(struct synx_session *session, u32 h_synx, u64 timeout_ms)
 {
-	if (IS_ERR_OR_NULL(session) || !session->ops || !session->ops->wait)
+	if (IS_ERR_OR_NULL(session) || !session->ops || !session->ops->wait) {
+		dprintk(SYNX_ERR, "invalid session\n");
 		return -SYNX_INVALID;
+	}
 	return session->ops->wait(session, h_synx, timeout_ms);
 }
 EXPORT_SYMBOL(synx_wait);
@@ -164,8 +190,10 @@ EXPORT_SYMBOL(synx_wait);
 int synx_cancel_async_wait(struct synx_session *session,
 	struct synx_callback_params *params)
 {
-	if (IS_ERR_OR_NULL(session) || !session->ops || !session->ops->cancel_async_wait)
+	if (IS_ERR_OR_NULL(session) || !session->ops || !session->ops->cancel_async_wait) {
+		dprintk(SYNX_ERR, "invalid session\n");
 		return -SYNX_INVALID;
+	}
 	return session->ops->cancel_async_wait(session, params);
 }
 EXPORT_SYMBOL(synx_cancel_async_wait);
