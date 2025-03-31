@@ -78,6 +78,9 @@ enum synx_init_flags {
  *                               to import a synx handle as local synx handle.
  *                            b. SYNX_IMPORT_SYNX_FENCE|SYNX_IMPORT_GLOBAL_FENCE
  *                               to import a synx handle as global synx handle.
+ *                            If client passes SYNX_IMPORT_SYNX_FENCE without specifying
+ *                            SYNX_IMPORT_LOCAL_FENCE or SYNX_IMPORT_GLOBAL_FENCE, and the
+ *                            fence passed is NULL, then synx_import returns a failure.
  * SYNX_IMPORT_DMA_FENCE    : Import dma fence and create Synx handle for interop.
  *                            Need to pass the dma_fence ptr through fence variable
  *                            if this flag is set. Client must pass:
@@ -87,6 +90,9 @@ enum synx_init_flags {
  *                            b. SYNX_IMPORT_DMA_FENCE|SYNX_IMPORT_GLOBAL_FENCE
  *                               to import a dma fence and create global synx handle
  *                               for interop.
+ *                            If client passes SYNX_IMPORT_DMA_FENCE without specifying
+ *                            SYNX_IMPORT_LOCAL_FENCE or SYNX_IMPORT_GLOBAL_FENCE, and the
+ *                            fence passed is NULL, then synx_import returns a failure.
  * SYNX_IMPORT_EX_RELEASE   : Flag to inform relaxed invocation where release call
  *                            need not be called by client on this handle after import.
  *                            (NOT SUPPORTED)
@@ -393,6 +399,55 @@ struct synx_create_params {
 };
 
 /**
+ *enum synx_release_type - Release params type
+ *
+ * SYNX_RELEASE_INDV_PARAMS : Release filled with synx_release_indv_params struct
+ * SYNX_RELEASE_ARR_PARAMS  : Release filled with synx_release_arr_params struct
+ */
+enum synx_release_type {
+	SYNX_RELEASE_INDV_PARAMS = 0x01,
+	SYNX_RELEASE_ARR_PARAMS  = 0x02,
+};
+
+/**
+ * struct synx_release_indv_params - Synx release indv parameters
+ *
+ * @h_synx      : Synx handle to be released.
+ * @result      : Return value of release of h_synx.
+ *                (filled by the function)
+ */
+struct synx_release_indv_params {
+	uint32_t h_synx;
+	uint32_t result;
+};
+
+/**
+ * struct synx_release_arr_params - Synx release arr parameters
+ *
+ * @list      : List of synx_release_indv_params.
+ * @num_objs  : Number of synx handles to be released.
+ */
+struct synx_release_arr_params {
+	struct synx_release_indv_params *list;
+	uint32_t                 num_objs;
+};
+
+/**
+ * struct synx_release_n_params - Synx release_n parameters
+ *
+ * @type     : Release params type filled by client.
+ * @indv     : Params to release an individual handle.
+ * @arr      : Params to release an array of handles.
+ */
+struct synx_release_n_params {
+	enum synx_release_type type;
+	union {
+		struct synx_release_indv_params indv;
+		struct synx_release_arr_params  arr;
+	};
+};
+
+/**
  * enum synx_merge_flags - Handle merge flags
  *
  * SYNX_MERGE_LOCAL_FENCE   : Create local composite synx object. To be passed along
@@ -434,8 +489,8 @@ struct synx_merge_params {
 /**
  * enum synx_import_type - Import type
  *
- * SYNX_IMPORT_INDV_PARAMS : Import filled with synx_import_indv_params struct
- * SYNX_IMPORT_ARR_PARAMS  : Import filled with synx_import_arr_params struct
+ * SYNX_IMPORT_INDV_PARAMS : Import/Create  filled with synx_import_indv_params struct
+ * SYNX_IMPORT_ARR_PARAMS  : Import/Create  filled with synx_import_arr_params struct
  * SYNX_IMPORT_INDV_PARAMS_V2 : Import filled with synx_import_indv_params_v2 struct
  */
 enum synx_import_type {
@@ -453,7 +508,7 @@ enum synx_import_type {
  *                process for all synx api operations and
  *                for sharing with FW cores.
  * @flags       : Synx import flags
- * @fence       : Pointer to DMA fence fd or synx handle.
+ * @fence       : Pointer to DMA fence fd or synx handle(NULL in case of create).
  */
 struct synx_import_indv_params {
 	u32 *new_h_synx;
@@ -485,7 +540,7 @@ struct synx_import_indv_params_v2 {
  * struct synx_import_arr_params - Synx import arr parameters
  *
  * @list        : List of synx_import_indv_params
- * @num_fences  : Number of fences or synx handles to be imported
+ * @num_fences  : Number of fences or synx handles to be imported/created
  */
 struct synx_import_arr_params {
 	struct synx_import_indv_params *list;
@@ -495,9 +550,9 @@ struct synx_import_arr_params {
 /**
  * struct synx_import_params - Synx import parameters
  *
- * @type : Import params type filled by client
- * @indv : Params to import an individual handle or fence
- * @arr  : Params to import an array of handles or fences
+ * @type : Import/Create params type filled by client
+ * @indv : Params to import/create an individual handle or fence
+ * @arr  : Params to import/create an array of handles or fences
  */
 struct synx_import_params {
 	enum synx_import_type type;
@@ -700,6 +755,7 @@ struct synx_get_params {
  * @get_fence           : gets native fence backing synx object
  * @release             : releases synx object
  * @get                 : gets information associated with synx object
+ * @release_n           : releases an array of synx objects
  */
 struct synx_ops {
 	int (*uninitialize)(struct synx_session *session);
@@ -716,6 +772,7 @@ struct synx_ops {
 	void *(*get_fence)(struct synx_session *session, u32 h_synx);
 	int (*release)(struct synx_session *session, u32 h_synx);
 	int (*get)(struct synx_session *session, struct synx_get_params *params);
+	int (*release_n)(struct synx_session *session, struct synx_release_n_params *params);
 };
 
 /* Kernel APIs */
@@ -891,7 +948,8 @@ int synx_read_n(struct synx_session *session, struct synx_read_n_params *params)
 int synx_get_status(struct synx_session *session, u32 h_synx);
 
 /**
- * synx_import - Imports (looks up) synx object from given handle or fence
+ * synx_import - Imports (looks up) synx object from given handle or fence,
+ * or creates a new handle if the fence passed is NULL.
  * *
  * @param session : Session ptr (returned from synx_initialize)
  * @param params  : Pointer to import params
@@ -924,6 +982,21 @@ void *synx_get_fence(struct synx_session *session, u32 h_synx);
  * @return Status of operation. Negative in case of error. SYNX_SUCCESS otherwise.
  */
 int synx_release(struct synx_session *session, u32 h_synx);
+
+/**
+ * @brief: Releases a list of synx objects.
+ *         Every created, imported or merged synx object should be
+ *         released.
+ *
+ * @param pSession   : Session ptr (returned from synx_initialize)
+ * @param pParams    : pointer to release params
+ *
+ * @return Status of operation. Negative if at least one of the handle release failed,
+ * SYNX_SUCCESS otherwise. This API will continue to release rest of the handles,
+ * even if release of some of the handles in the list failed. The status of individual
+ * failure can be seen in the result member of the structure synx_release_indv_params.
+ */
+int synx_release_n(struct synx_session *pSession, struct synx_release_n_params *pParams);
 
 /**
  * synx_recover - Recover any possible handle leaks
