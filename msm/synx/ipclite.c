@@ -219,7 +219,7 @@ EXPORT_SYMBOL(get_ipclite_feature);
 int ipclite_global_spin_lock_timeout(uint32_t idx, unsigned long to, unsigned long *flags)
 {
 	unsigned long expire = msecs_to_jiffies((unsigned long)to) + jiffies;
-	uint32_t owner;
+	int owner;
 
 	if (unlikely(!ipclite)) {
 		pr_err("IPCLite not initialized\n");
@@ -233,15 +233,23 @@ int ipclite_global_spin_lock_timeout(uint32_t idx, unsigned long to, unsigned lo
 		local_irq_save(*flags);
 		preempt_disable();
 
-		owner = atomic_fetch_or(1<<IPCMEM_APPS,
-		(ipclite_atomic_uint32_t *)&ipclite->gl_lock_table->global_lock[idx]);
+		if (get_ipclite_feature(IPCLITE_CMPXCHG_LOCK)) {
+			owner = atomic_cmpxchg((ipclite_atomic_uint32_t *)
+				&ipclite->gl_lock_table->global_lock[idx], 0, (IPCMEM_APPS+1));
 
-		if (!owner)
-			break;
-
-		if (!((1<<IPCMEM_APPS) & owner))
-			atomic_fetch_and(~(1<<IPCMEM_APPS),
+			if (!owner)
+				break;
+		} else {
+			owner = atomic_fetch_or(1<<IPCMEM_APPS,
 			(ipclite_atomic_uint32_t *)&ipclite->gl_lock_table->global_lock[idx]);
+
+			if (!owner)
+				break;
+
+			if (!((1<<IPCMEM_APPS) & owner))
+				atomic_fetch_and(~(1<<IPCMEM_APPS),
+			(ipclite_atomic_uint32_t *)&ipclite->gl_lock_table->global_lock[idx]);
+		}
 
 		local_irq_restore(*flags);
 		preempt_enable();
@@ -255,7 +263,7 @@ EXPORT_SYMBOL(ipclite_global_spin_lock_timeout);
 
 int ipclite_global_spin_unlock(uint32_t idx, unsigned long *flags)
 {
-	uint32_t owner;
+	int owner;
 
 	if (unlikely(!ipclite)) {
 		pr_err("IPCLite not initialized\n");
@@ -265,12 +273,24 @@ int ipclite_global_spin_unlock(uint32_t idx, unsigned long *flags)
 	if (idx >= IPCLITE_MAX_GLOBAL_LOCK)
 		return -EINVAL;
 
-	owner = atomic_fetch_and(~(1<<IPCMEM_APPS),
+	if (get_ipclite_feature(IPCLITE_CMPXCHG_LOCK)) {
+		owner = atomic_cmpxchg((ipclite_atomic_uint32_t *)
+			&ipclite->gl_lock_table->global_lock[idx], (IPCMEM_APPS+1), 0);
+
+		if (owner != (IPCMEM_APPS+1)) {
+			IPCLITE_OS_LOG(IPCLITE_DBG, "ipclite atomic lock release failed,owner=%d",
+			owner-1);
+			return -EINVAL;
+		}
+	} else {
+		owner = atomic_fetch_and(~(1<<IPCMEM_APPS),
 			(ipclite_atomic_uint32_t *)&ipclite->gl_lock_table->global_lock[idx]);
 
-	if (!((1<<IPCMEM_APPS) & owner)) {
-		IPCLITE_OS_LOG(IPCLITE_ERR, "idx %d is not acquired by current core", idx);
-		return -EINVAL;
+		if (!((1<<IPCMEM_APPS) & owner)) {
+			IPCLITE_OS_LOG(IPCLITE_ERR, "idx %d is not acquired by current core",
+			idx);
+			return -EINVAL;
+		}
 	}
 
 	local_irq_restore(*flags);
@@ -284,9 +304,18 @@ int ipclite_global_spin_bust(uint32_t idx, uint32_t core_id)
 {
 	if (idx >= IPCLITE_MAX_GLOBAL_LOCK)
 		return -EINVAL;
-	if (ipclite->gl_lock_table->global_lock[idx] & (1<<core_id)) {
-		atomic_set((ipclite_atomic_uint32_t *)&ipclite->gl_lock_table->global_lock[idx], 0);
-		IPCLITE_OS_LOG(IPCLITE_DBG, "Ipclite Bust for atomic lock successful");
+	if (get_ipclite_feature(IPCLITE_CMPXCHG_LOCK)) {
+		if (ipclite->gl_lock_table->global_lock[idx] == (core_id+1)) {
+			atomic_set((ipclite_atomic_uint32_t *)
+			&ipclite->gl_lock_table->global_lock[idx], 0);
+			IPCLITE_OS_LOG(IPCLITE_DBG, "Ipclite Bust for atomic lock successful");
+		}
+	} else {
+		if (ipclite->gl_lock_table->global_lock[idx] & (1<<core_id)) {
+			atomic_set((ipclite_atomic_uint32_t *)
+			&ipclite->gl_lock_table->global_lock[idx], 0);
+			IPCLITE_OS_LOG(IPCLITE_DBG, "Ipclite Bust for atomic lock successful");
+		}
 	}
 	return 0;
 }

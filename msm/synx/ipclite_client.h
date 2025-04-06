@@ -31,6 +31,7 @@ enum ipclite_feature_mask {
 	IPCLITE_GLOBAL_ATOMIC = 0x0001ULL,
 	IPCLITE_TEST_SUITE = 0x0002ULL,
 	IPCLITE_GLOBAL_LOCK = 0x0004ULL,
+	IPCLITE_CMPXCHG_LOCK = 0x0008ULL,
 };
 
 /* Max Atomic locks supported*/
