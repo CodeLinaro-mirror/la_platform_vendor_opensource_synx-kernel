@@ -54,13 +54,9 @@ int synx_util_init_coredata(struct synx_coredata *synx_obj,
 	if (params->name)
 		strscpy(synx_obj->name, params->name, sizeof(synx_obj->name));
 
-	if (params->flags & SYNX_CREATE_DMA_FENCE) {
+	if ((params->flags & SYNX_CREATE_DMA_FENCE)
+		&& !IS_ERR_OR_NULL(params->fence)) {
 		fence = (struct dma_fence *)params->fence;
-		if (IS_ERR_OR_NULL(fence)) {
-			dprintk(SYNX_ERR, "invalid external fence\n");
-			goto free;
-		}
-
 		dma_fence_get(fence);
 		synx_obj->fence = fence;
 	} else {

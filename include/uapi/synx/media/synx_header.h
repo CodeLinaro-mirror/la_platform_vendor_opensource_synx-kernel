@@ -320,6 +320,48 @@ struct synx_initialize_v2 {
 };
 
 /**
+ * struct synx_release_info - Synx release arr parameters
+ *
+ * @synx_obj     : Synx handle to be released
+ * @status       : release status of synx_obj
+ * @reserved     : Reserved
+ */
+struct synx_release_indv_info {
+	__u32 synx_obj;
+	__s32 status;
+	__u32 reserved;
+};
+
+/**
+ * struct synx_op_arr_info - Generic list info for synx objects for batch
+ *                           operations.
+ *
+ * @synx_objs :  list of individual handle info
+ * @num_objs  :  Number of objects in the array
+ * @reserved  : Reserved
+ */
+struct synx_op_arr_info {
+	__u64 list;
+	__u32 num_objs;
+	__u32 reserved;
+};
+
+/**
+ * struct synx_release_n_info - Release information for synx objects
+ *
+ * @type     : Release params type
+ * @indv     : Params to release an individual handle
+ * @arr      : Params to release an array of handles
+ */
+struct synx_release_n_info {
+	__u32 type;
+	union {
+		struct synx_release_indv_info indv;
+		struct synx_op_arr_info arr;
+	};
+};
+
+/**
  * struct synx_recover_info - synx recover information
  *
  * @id       : Client identifier
@@ -351,5 +393,6 @@ struct synx_recover_info {
 #define SYNX_GETFENCE_FD                     13
 #define SYNX_INITIALIZE                      14
 #define SYNX_RECOVER                         15
+#define SYNX_RELEASE_N                       16
 
 #endif /* __UAPI_SYNX_H__ */
