@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/atomic.h>
@@ -15,6 +15,8 @@
 #include <linux/sync_file.h>
 #include <linux/uaccess.h>
 #include <linux/vmalloc.h>
+#include <linux/suspend.h>
+#include <linux/notifier.h>
 
 #include "synx_debugfs_v2.h"
 #include "synx_private_v2.h"
@@ -2563,6 +2565,93 @@ static int synx_cdsp_restart_notifier(struct notifier_block *nb,
 	return NOTIFY_DONE;
 }
 
+static int synx_prepare_pm_ops(void)
+{
+	int rc = SYNX_SUCCESS;
+
+	rc = synx_global_memory_is_empty();
+	if (rc) {
+		dprintk(SYNX_ERR, "Global memory is not empty, err=%d\n", rc);
+		return rc;
+	}
+
+	rc = synx_util_local_map_is_empty(synx_dev->native->bitmap,
+		SYNX_MAX_OBJS);
+	if (rc) {
+		dprintk(SYNX_ERR, "Local memory is not empty, err=%d\n", rc);
+		return rc;
+	}
+
+	rc = synx_global_free_synx_hwlock();
+	if (rc) {
+		dprintk(SYNX_ERR, "Failed to release synx_hwlock, err=%d\n", rc);
+		return rc;
+	}
+
+	return rc;
+}
+
+static int synx_hibernate_entry(void)
+{
+	int rc = SYNX_SUCCESS;
+
+	/*
+	 * During hibernate entry, no synx use case will be active and global memory
+	 * will be reset.
+	 */
+
+	rc = synx_prepare_pm_ops();
+	if (rc) {
+		dprintk(SYNX_ERR, "Failed to prepare for hibernate, err=%d\n", rc);
+		return -SYNX_EAGAIN;
+	}
+
+	dprintk(SYNX_DBG, "Synx hibernate entry successful\n");
+
+	return rc;
+}
+
+static int synx_hibernate_exit(void)
+{
+	int rc = SYNX_SUCCESS;
+
+	/*
+	 * During hibernate exit, we need to initialize global memory
+	 * and also acquire hw_mutex
+	 */
+
+	rc = synx_global_mem_init();
+	if (rc) {
+		dprintk(SYNX_ERR, "shared mem init failed, err=%d\n", rc);
+		return -SYNX_EAGAIN;
+	}
+
+	dprintk(SYNX_DBG, "Synx hibernate exit successful\n");
+
+	return rc;
+}
+
+static int qcom_synx_hibernation_notifier(struct notifier_block *nb,
+				unsigned long event, void *dummy)
+{
+	int rc = SYNX_SUCCESS;
+
+	if (event == PM_HIBERNATION_PREPARE)
+		rc = synx_hibernate_entry();
+	else if (event == PM_POST_HIBERNATION)
+		rc = synx_hibernate_exit();
+
+	if (rc)
+		return NOTIFY_BAD;
+
+	return NOTIFY_OK;
+}
+
+static struct notifier_block qcom_synx_notif_block = {
+	.notifier_call = qcom_synx_hibernation_notifier,
+};
+
+
 static int __init synx_init(void)
 {
 	int rc;
@@ -2633,6 +2722,12 @@ static int __init synx_init(void)
 
 	ipclite_register_client(synx_ipc_callback, NULL);
 	synx_local_mem_init();
+
+	rc = register_pm_notifier(&qcom_synx_notif_block);
+	if (rc) {
+		dprintk(SYNX_ERR, "SYNX hibernate registration failed, err %d\n", rc);
+		goto err;
+	}
 
 	dprintk(SYNX_INFO, "device initialization success\n");
 
