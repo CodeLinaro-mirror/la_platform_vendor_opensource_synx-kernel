@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/slab.h>
@@ -82,7 +82,6 @@ int synx_util_init_coredata(struct synx_coredata *synx_obj,
 		dma_fence_init(fence, ops, fence_lock, dma_context, seq);
 
 		synx_obj->fence = fence;
-		synx_util_activate(synx_obj);
 		dprintk(SYNX_MEM,
 			"allocated backing fence %pK\n", fence);
 
@@ -124,6 +123,28 @@ free:
 	return rc;
 }
 
+int synx_dma_add_cb_no_enable_sig(struct dma_fence *fence,
+	struct dma_fence_cb *cb, dma_fence_func_t func)
+{
+	unsigned long flags;
+	int ret = 0;
+
+	if (WARN_ON(!fence || !func))
+		return -EINVAL;
+
+	spin_lock_irqsave(fence->lock, flags);
+	if (test_bit(DMA_FENCE_FLAG_SIGNALED_BIT, &fence->flags)) {
+		INIT_LIST_HEAD(&cb->node);
+		ret = -ENOENT;
+	} else {
+		cb->func = func;
+		list_add_tail(&cb->node, &fence->cb_list);
+	}
+	spin_unlock_irqrestore(fence->lock, flags);
+
+	return ret;
+}
+
 int synx_util_add_callback(struct synx_coredata *synx_obj,
 	u32 h_synx)
 {
@@ -151,7 +172,7 @@ int synx_util_add_callback(struct synx_coredata *synx_obj,
 	 * get notified on signal from clients using
 	 * native dma fence operations.
 	 */
-	rc = dma_fence_add_callback(synx_obj->fence,
+	rc = synx_dma_add_cb_no_enable_sig(synx_obj->fence,
 			&signal_cb->fence_cb, synx_fence_callback);
 	if (rc != 0) {
 		if (rc == -ENOENT) {
@@ -264,7 +285,6 @@ int synx_util_init_group_coredata(struct synx_coredata *synx_obj,
 	set_bit(SYNX_NATIVE_FENCE_FLAG_ENABLED_BIT, &synx_obj->fence->flags);
 	synx_obj->status = synx_util_get_object_status(synx_obj);
 
-	synx_util_activate(synx_obj);
 	entry->key = (u64)synx_obj->fence;
 	if (params->flags & SYNX_MERGE_GLOBAL_FENCE)
 		entry->g_handle = *params->h_merged_obj;
@@ -1091,6 +1111,14 @@ static void synx_util_cleanup_fence(
 	f_status = synx_util_get_object_status(synx_obj);
 	dprintk(SYNX_VERB, "f_status:%u, signal_cb:%p, map:%u, idx:%u\n",
 		f_status, signal_cb, synx_obj->map_count, synx_obj->global_idx);
+
+	/*
+	 * Enable signaling for dma-fence done before releasing as during fence creation
+	 * this was not done. This API can be called multiple times on same fence but subsquent
+	 * calls are ignored.
+	 */
+	synx_util_activate(synx_obj);
+
 	if (synx_obj->map_count == 0 &&
 		(signal_cb != NULL) &&
 		(synx_obj->global_idx != 0) &&

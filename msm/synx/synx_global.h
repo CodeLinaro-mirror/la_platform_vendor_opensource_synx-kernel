@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef __SYNX_SHARED_MEM_H__
@@ -224,7 +224,7 @@ int synx_global_clear_subscribed_core(u32 idx, enum synx_core_id id);
 u32 synx_global_get_status(u32 idx);
 
 /**
- * synx_global_test_status_set_wait - Check status and add core as waiter is not signaled
+ * synx_global_test_status_set_wait - Check status and add core as waiter if not signaled
  *
  * This tests and adds the waiter in one atomic operation, to avoid
  * race with signal which can miss sending the IPC signal if
@@ -237,6 +237,18 @@ u32 synx_global_get_status(u32 idx);
  * @return Status of global entry idx.
  */
 u32 synx_global_test_status_set_wait(u32 idx,
+	enum synx_core_id id);
+
+/**
+ * synx_global_test_status_set_parent_child_wait - Check status and add core as waiter
+ * for child or parent
+ *
+ * @param idx : Global entry index
+ * @param id  : Core to be set as waiter (if unsignaled)
+ *
+ * @return Status of global entry idx.
+ */
+int synx_global_test_status_set_parent_child_wait(u32 idx,
 	enum synx_core_id id);
 
 /**
