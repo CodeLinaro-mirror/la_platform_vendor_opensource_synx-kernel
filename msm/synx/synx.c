@@ -1478,6 +1478,71 @@ int synx_internal_release(struct synx_session *session, u32 h_synx)
 	return rc;
 }
 
+int synx_internal_release_n(struct synx_session *session,
+	struct synx_release_n_params *params)
+{
+	int rc = SYNX_SUCCESS;
+	int result = SYNX_SUCCESS;
+	struct synx_client *client = NULL;
+	u32 idx = 0;
+
+	client = synx_get_client(session);
+	if (IS_ERR_OR_NULL(client)) {
+		dprintk(SYNX_ERR, "invalid client\n");
+		return -SYNX_INVALID;
+	}
+
+	if (IS_ERR_OR_NULL(params)) {
+		dprintk(SYNX_ERR, "invalid params passed\n");
+		synx_put_client(client);
+		return -SYNX_INVALID;
+	}
+
+	if (params->type == SYNX_RELEASE_ARR_PARAMS) {
+		if (IS_ERR_OR_NULL(params->arr.list) || params->arr.num_objs == 0
+			|| params->arr.num_objs >= SYNX_MAX_OBJS) {
+			synx_put_client(client);
+			dprintk(SYNX_ERR, "invalid arguments\n");
+			return -SYNX_INVALID;
+		}
+		for (idx = 0; idx < params->arr.num_objs; idx++) {
+			rc = synx_native_release_core(client, params->arr.list[idx].h_synx);
+			if (rc != SYNX_SUCCESS) {
+				dprintk(SYNX_ERR,
+				"Handle %u release failed with status %d\n",
+				params->arr.list[idx].h_synx, rc);
+				/* Setting a one time return result with failure of
+				 * the first failed release.
+				 */
+				if (!result)
+					result = rc;
+			} else {
+				dprintk(SYNX_VERB,
+				"Handle %u release success\n",
+				params->arr.list[idx].h_synx);
+			}
+			params->arr.list[idx].result = rc;
+		}
+	} else if (params->type == SYNX_RELEASE_INDV_PARAMS) {
+		result = synx_native_release_core(client, params->indv.h_synx);
+		if (result != SYNX_SUCCESS) {
+				dprintk(SYNX_ERR,
+				"Handle %u release failed with status %d\n",
+				params->indv.h_synx, result);
+			} else {
+				dprintk(SYNX_VERB,
+				"Handle %u release success\n",
+				params->indv.h_synx);
+			}
+			params->indv.result = result;
+	} else {
+		dprintk(SYNX_ERR, "Invalid type passed for release %d\n", params->type);
+		result = -SYNX_INVALID;
+	}
+	synx_put_client(client);
+	return result;
+}
+
 int synx_internal_wait(struct synx_session *session,
 	u32 h_synx, u64 timeout_ms)
 {
@@ -1772,7 +1837,7 @@ static int synx_native_import_handle(struct synx_client *client,
 	struct synx_import_indv_params *params)
 {
 	int rc = SYNX_SUCCESS;
-	u32 h_synx, core_id;
+	u32 h_synx = 0, core_id;
 	struct synx_map_entry *map_entry, *old_entry;
 	struct synx_coredata *synx_obj;
 	struct synx_handle_coredata *synx_data = NULL, *curr;
@@ -1780,12 +1845,36 @@ static int synx_native_import_handle(struct synx_client *client,
 	struct synx_create_params c_params = {0};
 
 	if (IS_ERR_OR_NULL(client) || IS_ERR_OR_NULL(params) ||
-		IS_ERR_OR_NULL(params->fence) ||
 		IS_ERR_OR_NULL(params->new_h_synx)) {
 		dprintk(SYNX_ERR, "invalid client and params\n");
 		return -SYNX_INVALID;
 		}
 
+	if ((params->flags & (SYNX_IMPORT_GLOBAL_FENCE|SYNX_IMPORT_LOCAL_FENCE))
+		&& !(params->fence)) {
+		synx_util_map_import_params_to_create(params, &c_params);
+		scnprintf(name, SYNX_OBJ_NAME_LEN, "import-client-%d",
+			current->pid);
+		c_params.name = name;
+		c_params.h_synx = &h_synx;
+
+		rc = synx_native_create_core(client, &c_params);
+		if (rc != SYNX_SUCCESS) {
+			dprintk(SYNX_ERR,
+			"[sess :%llu] create handle failed \n",
+			client->id);
+		} else {
+			*params->new_h_synx = h_synx;
+			dprintk(SYNX_VERB,
+			"[sess :%llu] handle created %u flag 0x%x\n",
+			client->id, *c_params.h_synx, c_params.flags);
+		}
+		return rc;
+	}
+	if (IS_ERR_OR_NULL(params->fence)) {
+		dprintk(SYNX_ERR, "Fence passed is NULL for import\n");
+		return -SYNX_INVALID;
+	}
 	h_synx = *((u32 *)params->fence);
 
 	/* check if already mapped to client */
@@ -2133,15 +2222,16 @@ static int synx_native_import_indv(struct synx_client *client,
 	u32 hw_fence = 0;
 
 	if (IS_ERR_OR_NULL(params) ||
-		IS_ERR_OR_NULL(params->new_h_synx) ||
-		IS_ERR_OR_NULL(params->fence)) {
+		IS_ERR_OR_NULL(params->new_h_synx)) {
 		dprintk(SYNX_ERR, "invalid import arguments\n");
 		return -SYNX_INVALID;
 	}
 
 	flags = params->flags;
-	fence = params->fence;
-	hw_fence = *((u32 *)params->fence);
+	if (!IS_ERR_OR_NULL(params->fence)) {
+		fence = params->fence;
+		hw_fence = *((u32 *)params->fence);
+	}
 
 	if ((params->flags & SYNX_IMPORT_SYNX_FENCE) && IS_HW_FENCE(hw_fence)) {
 
@@ -2161,7 +2251,7 @@ static int synx_native_import_indv(struct synx_client *client,
 		params->flags = SYNX_IMPORT_GLOBAL_FENCE | SYNX_IMPORT_DMA_FENCE;
 	}
 
-	if (likely(params->flags & SYNX_IMPORT_DMA_FENCE)) {
+	if (likely(params->flags & SYNX_IMPORT_DMA_FENCE) && !IS_ERR_OR_NULL(params->fence)) {
 
 		if (dma_fence_is_array(params->fence)) {
 			dprintk(SYNX_ERR, "Cannot import dma fence array %pK\n", params->fence);
@@ -2170,9 +2260,10 @@ static int synx_native_import_indv(struct synx_client *client,
 		}
 
 		rc = synx_native_import_fence(client, params);
-	}
-	else if (params->flags & SYNX_IMPORT_SYNX_FENCE)
+	} else if ((params->flags &
+		(SYNX_IMPORT_GLOBAL_FENCE|SYNX_IMPORT_LOCAL_FENCE|SYNX_IMPORT_SYNX_FENCE))) {
 		rc = synx_native_import_handle(client, params);
+	}
 
 bail:
 	if ((flags & SYNX_IMPORT_SYNX_FENCE) && IS_HW_FENCE(hw_fence)) {
@@ -2357,11 +2448,20 @@ static int synx_handle_import(struct synx_private_ioctl_arg *k_ioctl,
 			k_ioctl->size))
 		return -EFAULT;
 
-	if (import_info.flags & SYNX_IMPORT_DMA_FENCE)
+	if ((import_info.flags & SYNX_IMPORT_DMA_FENCE) &&
+		(import_info.desc.id[0] != 0)) {
 		params.indv.fence =
 			sync_file_get_fence(import_info.desc.id[0]);
-	else if (import_info.flags & SYNX_IMPORT_SYNX_FENCE)
+		if (IS_ERR_OR_NULL(params.indv.fence)) {
+			dprintk(SYNX_ERR,
+				"Invalid fence passed %d\n",
+				import_info.desc.id[0]);
+			return -SYNX_INVALID;
+		}
+	} else if ((import_info.flags & SYNX_IMPORT_SYNX_FENCE) &&
+		(import_info.synx_obj != 0)) {
 		params.indv.fence = &import_info.synx_obj;
+	}
 
 	params.type = SYNX_IMPORT_INDV_PARAMS;
 	params.indv.flags = import_info.flags;
@@ -2371,7 +2471,8 @@ static int synx_handle_import(struct synx_private_ioctl_arg *k_ioctl,
 		result = -SYNX_INVALID;
 
 	// Fence needs to be put irresepctive of import status
-	if (import_info.flags & SYNX_IMPORT_DMA_FENCE)
+	if ((import_info.flags & SYNX_IMPORT_DMA_FENCE) &&
+		(import_info.synx_obj != 0))
 		dma_fence_put(params.indv.fence);
 
 	if (result != SYNX_SUCCESS)
@@ -2420,16 +2521,27 @@ static int synx_handle_import_arr(
 		params.indv.new_h_synx = &arr[idx].new_synx_obj;
 		params.indv.flags = arr[idx].flags;
 
-		if (arr[idx].flags & SYNX_IMPORT_DMA_FENCE)
+		if ((arr[idx].flags & SYNX_IMPORT_DMA_FENCE) &&
+			(arr[idx].desc.id[0] != 0)) {
 			params.indv.fence =
 				sync_file_get_fence(arr[idx].desc.id[0]);
-		else if (arr[idx].flags & SYNX_IMPORT_SYNX_FENCE)
+			if (IS_ERR_OR_NULL(params.indv.fence)) {
+				dprintk(SYNX_ERR,
+				"Invalid fence passed %u\n",
+				arr[idx].desc.id[0]);
+				rc = -SYNX_INVALID;
+				break;
+			}
+		} else if ((arr[idx].flags & SYNX_IMPORT_SYNX_FENCE) &&
+			(arr[idx].synx_obj != 0)) {
 			params.indv.fence = &arr[idx].synx_obj;
+		}
 
 		rc = synx_import(session, &params);
 
 		// Fence needs to be put irresepctive of import status
-		if (arr[idx].flags & SYNX_IMPORT_DMA_FENCE)
+		if ((arr[idx].flags & SYNX_IMPORT_DMA_FENCE) &&
+			arr[idx].synx_obj != 0)
 			dma_fence_put(params.indv.fence);
 
 		if (rc != SYNX_SUCCESS)
@@ -2644,6 +2756,95 @@ static int synx_handle_release(struct synx_private_ioctl_arg *k_ioctl,
 	return synx_release(session, release_info.synx_obj);
 }
 
+static int synx_handle_release_n(struct synx_private_ioctl_arg *k_ioctl,
+	struct synx_session *session)
+{
+	int result = SYNX_SUCCESS;
+	struct synx_release_n_info arr_info = {0};
+	struct synx_release_n_params params = {0};
+	u32 idx = 0;
+	struct synx_release_indv_info *arr = NULL;
+
+	if (k_ioctl->size != sizeof(arr_info))
+		return -SYNX_INVALID;
+
+	if (copy_from_user(&arr_info,
+			u64_to_user_ptr(k_ioctl->ioctl_ptr),
+			k_ioctl->size))
+		return -EFAULT;
+
+	if (arr_info.type == SYNX_RELEASE_ARR_PARAMS) {
+		if (arr_info.arr.num_objs >= SYNX_MAX_OBJS || arr_info.arr.num_objs == 0
+			|| arr_info.arr.list == 0)
+			return -SYNX_INVALID;
+
+		arr = kcalloc(arr_info.arr.num_objs,
+					sizeof(*arr), GFP_KERNEL);
+		if (IS_ERR_OR_NULL(arr))
+			return -ENOMEM;
+
+		if (copy_from_user(arr,
+				u64_to_user_ptr(arr_info.arr.list),
+				sizeof(*arr) * arr_info.arr.num_objs)) {
+			kfree(arr);
+			return -EFAULT;
+		}
+
+		params.type = SYNX_RELEASE_ARR_PARAMS;
+		params.arr.num_objs = arr_info.arr.num_objs;
+		params.arr.list = kcalloc(params.arr.num_objs,
+					sizeof(struct synx_release_indv_params), GFP_KERNEL);
+		if (IS_ERR_OR_NULL(params.arr.list)) {
+			kfree(arr);
+			return -ENOMEM;
+		}
+
+		for (idx = 0; idx < params.arr.num_objs; idx++) {
+			params.arr.list[idx].h_synx = arr[idx].synx_obj;
+			params.arr.list[idx].result = -SYNX_INVALID;
+		}
+
+		result = synx_release_n(session, &params);
+		if (result != SYNX_SUCCESS)
+			dprintk(SYNX_ERR, "synx_release_n failed %d", result);
+
+		for (idx = 0; idx < params.arr.num_objs; idx++) {
+			arr[idx].status = params.arr.list[idx].result;
+			dprintk(SYNX_DBG,"Handle: %u Release status: %d\n",
+				params.arr.list[idx].h_synx, params.arr.list[idx].result);
+		}
+
+		if (copy_to_user(u64_to_user_ptr(arr_info.arr.list),
+			arr,
+			sizeof(*arr) * arr_info.arr.num_objs)) {
+			result = -EFAULT;
+			dprintk(SYNX_ERR, "Copy to user failed for batch release.");
+		}
+
+		kfree(arr);
+		kfree(params.arr.list);
+	} else if (arr_info.type == SYNX_RELEASE_INDV_PARAMS) {
+		params.type = SYNX_RELEASE_INDV_PARAMS;
+		params.indv.h_synx = arr_info.indv.synx_obj;
+		params.indv.result = -SYNX_INVALID;
+
+		result = synx_release_n(session, &params);
+		if (result != SYNX_SUCCESS) {
+			dprintk(SYNX_ERR,
+				"synx_release_n failed %d for indv handle %u",
+				result, params.indv.h_synx);
+		} else {
+			dprintk(SYNX_VERB,
+				"synx_release_n success for indv handle %u",
+				params.indv.h_synx);
+		}
+	} else {
+		dprintk(SYNX_ERR, "Invalid type passed %d", arr_info.type);
+		result = -SYNX_INVALID;
+	}
+	return result;
+}
+
 static int synx_handle_get_fence(struct synx_private_ioctl_arg *k_ioctl,
 	struct synx_session *session)
 {
@@ -2736,6 +2937,9 @@ static long synx_ioctl(struct file *filep,
 		break;
 	case SYNX_RELEASE:
 		rc = synx_handle_release(&k_ioctl, session);
+		break;
+	case SYNX_RELEASE_N:
+		rc = synx_handle_release_n(&k_ioctl, session);
 		break;
 	case SYNX_REGISTER_PAYLOAD:
 		rc = synx_handle_async_wait(&k_ioctl,
