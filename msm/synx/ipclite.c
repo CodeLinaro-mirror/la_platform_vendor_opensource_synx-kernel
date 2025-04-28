@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2024-2025, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #define pr_fmt(fmt) "%s:%s: " fmt, KBUILD_MODNAME, __func__
 
@@ -1599,11 +1599,13 @@ static int ipclite_driver_restore(struct device *dev)
 
 	if (!hibernation_enabled) {
 		memset(ipclite->ipcmem.mem.virt_base, 0, ipclite->ipcmem.mem.size);
+		#if  (KERNEL_VERSION(6, 1, 0) > LINUX_VERSION_CODE)
 		ret = set_ipcmem_access_control(ipclite);
 		if (ret) {
 			dev_err(dev, "failed to setup ipclite mem\n");
 			return -EINVAL;
 		}
+		#endif
 	}
 
 	return 0;
