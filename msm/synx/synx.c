@@ -3960,6 +3960,7 @@ int synx_internal_recover(enum synx_client_id id)
 	case SYNX_CORE_IRIS:
 	case SYNX_CORE_ICP:
 	case SYNX_CORE_ICP1:
+	case SYNX_CORE_GMU:
 		break;
 	default:
 		dprintk(SYNX_ERR, "recovery not supported on %u\n", id);

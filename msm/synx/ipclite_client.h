@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2021-2023,2025, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #ifndef __IPCLITE_CLIENT_H__
 #define __IPCLITE_CLIENT_H__
@@ -15,7 +15,7 @@ enum ipcmem_host_type {
 	IPCMEM_APPS         =  0,                     /**< Apps Processor */
 	IPCMEM_CAM1         =  1,                     /**< Camera processor ICP1 */
 	IPCMEM_LPASS        =  2,                     /**< Audio processor */
-	IPCMEM_SLPI         =  3,                     /**< Sensor processor */
+	IPCMEM_GPU          =  3,                     /**< Graphics processor GMU */
 	IPCMEM_SOCCP        =  4,                     /**< SOCCP processor */
 	IPCMEM_CDSP         =  5,                     /**< Compute DSP processor */
 	IPCMEM_CVP          =  6,                     /**< Computer Vision processor */

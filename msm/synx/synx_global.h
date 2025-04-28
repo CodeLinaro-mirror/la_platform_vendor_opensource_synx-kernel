@@ -19,7 +19,9 @@
  * SYNX_CORE_EVA      : EVA core
  * SYNX_CORE_IRIS     : IRIS core
  * SYNX_CORE_ICP      : ICP core
+ * SYNX_CORE_SOCCP    : SoCCP core
  * SYNX_CORE_ICP1     : OFE ICP core
+ * SYNX_CORE_GMU      : GMU core
  */
 enum synx_core_id {
 	SYNX_CORE_APSS = 0,
@@ -29,6 +31,7 @@ enum synx_core_id {
 	SYNX_CORE_ICP,
 	SYNX_CORE_SOCCP,
 	SYNX_CORE_ICP1,
+	SYNX_CORE_GMU,
 	SYNX_CORE_MAX,
 };
 
