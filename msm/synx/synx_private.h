@@ -178,6 +178,9 @@ struct synx_coredata {
 	u32 global_idx;
 	u32 map_count;
 	struct synx_signal_cb *signal_cb;
+#if defined(CONFIG_EXTENSIBLE_GLCOREDATA)
+	u64 security_key;
+#endif
 };
 
 struct synx_client;

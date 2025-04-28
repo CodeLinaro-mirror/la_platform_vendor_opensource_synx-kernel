@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only WITH Linux-syscall-note */
 /*
- * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef __UAPI_SYNX_H__
@@ -265,6 +265,31 @@ struct synx_import_info {
 };
 
 /**
+ * struct synx_import_info_v2 - import info v2
+ *
+ * @synx_obj         : Synx handle to be imported
+ * @flags            : Import flags
+ * @new_synx_obj     : Synx object created in import
+ * @reserved         : Reserved
+ * @desc             : External fence descriptor
+ * @client_data_hi   : most significant 32 bits of the 64-bit client_data
+ * @client_data_lo   : least significant 32 bits of the 64-bit client_data
+ * @security_key_hi  : most significant 32 bits of the 64-bit security_key
+ * @security_key_lo  : least significant 32 bits of the 64-bit security_key
+ */
+struct synx_import_info_v2 {
+	__u32 synx_obj;
+	__u32 flags;
+	__u32 new_synx_obj;
+	__u32 reserved;
+	struct synx_fence_desc desc;
+	__u32 client_data_hi;
+	__u32 client_data_lo;
+	__u32 security_key_hi;
+	__u32 security_key_lo;
+};
+
+/**
  * struct synx_import_arr_info - import list info
  *
  * @list     : List of synx_import_info
@@ -429,5 +454,6 @@ struct synx_recover_info {
 #define SYNX_RECOVER                         15
 #define SYNX_RELEASE_N                       16
 #define SYNX_INITIALIZE_V3                   17
-
+#define SYNX_IMPORT_V2                       18
+#define SYNX_IMPORT_ARR_V2                   19
 #endif /* __UAPI_SYNX_H__ */
