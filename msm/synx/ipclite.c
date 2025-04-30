@@ -1608,7 +1608,7 @@ static int ipclite_driver_restore(struct device *dev)
 		#endif
 	}
 
-	return 0;
+	return ret;
 }
 
 static const struct dev_pm_ops ipclite_hibernate_pm_ops = {
