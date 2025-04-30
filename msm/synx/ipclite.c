@@ -1011,6 +1011,10 @@ static void ipcmem_init(struct ipclite_mem *ipcmem)
 static int set_ipcmem_access_control(struct ipclite_info *ipclite)
 {
 	int ret = 0;
+
+	if (ipclite == NULL)
+		return ret;
+
 #if (KERNEL_VERSION(5, 15, 0) < LINUX_VERSION_CODE)
 		uint64_t dspVMids = BIT(VMID_HLOS) | BIT(VMID_CDSP);
 		struct qcom_scm_vmperm destVM[2] = {
@@ -1605,6 +1609,8 @@ static int ipclite_driver_restore(struct device *dev)
 			dev_err(dev, "failed to setup ipclite mem\n");
 			return -EINVAL;
 		}
+		#else
+		ret = set_ipcmem_access_control(NULL);
 		#endif
 	}
 
