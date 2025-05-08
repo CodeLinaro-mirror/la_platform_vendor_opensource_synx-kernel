@@ -3547,6 +3547,7 @@ static int __init synx_init(void)
 	synx_shared_ops.get_fence = synx_internal_get_dma_fence;
 	synx_shared_ops.notify_recover = synx_internal_notify_recover;
 	synx_shared_ops.signal_fence = synx_internal_signal_fence;
+	synx_shared_ops.dma_add_cb_no_enable_sig = dma_fence_add_callback;
 	rc  = synx_hwfence_init_interops(&synx_shared_ops, &hwfence_shared_ops);
 	if (rc) {
 		dprintk(SYNX_ERR, "Hw fence inter-op mapping failed, err %d\n", rc);
