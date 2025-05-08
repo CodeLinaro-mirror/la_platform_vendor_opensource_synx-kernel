@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/atomic.h>
@@ -3187,6 +3187,8 @@ static int __init synx_init(void)
 	synx_shared_ops.share_handle_status = synx_internal_share_handle_status;
 	synx_shared_ops.get_fence = synx_internal_get_dma_fence;
 	synx_shared_ops.notify_recover = NULL;
+	synx_shared_ops.signal_fence = NULL;
+	synx_shared_ops.dma_add_cb_no_enable_sig = NULL;
 	rc  = synx_hwfence_init_interops(&synx_shared_ops, &hwfence_shared_ops);
 	if (rc) {
 		dprintk(SYNX_ERR, "Hw fence inter-op mapping failed, err %d\n", rc);
