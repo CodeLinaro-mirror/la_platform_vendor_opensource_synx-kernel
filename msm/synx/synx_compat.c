@@ -17,6 +17,7 @@ struct synx_ops synx_hwfence_ops = {
 	.signal = NULL,
 	.signal_n = NULL,
 	.async_wait = NULL,
+	.async_wait_n = NULL,
 	.get_fence = NULL,
 	.import = NULL,
 	.get_status = NULL,
@@ -24,7 +25,7 @@ struct synx_ops synx_hwfence_ops = {
 	.merge_n = NULL,
 	.wait = NULL,
 	.cancel_async_wait = NULL,
-	.get = NULL
+	.cancel_async_wait_n = NULL
 };
 
 struct synx_ops synx_internal_ops = {
@@ -35,6 +36,7 @@ struct synx_ops synx_internal_ops = {
 	.signal = NULL,
 	.signal_n = NULL,
 	.async_wait = NULL,
+	.async_wait_n = NULL,
 	.get_fence = NULL,
 	.import = NULL,
 	.get_status = NULL,
@@ -42,6 +44,7 @@ struct synx_ops synx_internal_ops = {
 	.merge_n = NULL,
 	.wait = NULL,
 	.cancel_async_wait = NULL,
+	.cancel_async_wait_n = NULL,
 	.get = NULL
 };
 
@@ -137,6 +140,16 @@ int synx_async_wait(struct synx_session *session, struct synx_callback_params *p
 }
 EXPORT_SYMBOL(synx_async_wait);
 
+int synx_async_wait_n(struct synx_session *session, struct synx_callback_n_params *params)
+{
+	if (IS_ERR_OR_NULL(session) || !session->ops || !session->ops->async_wait_n) {
+		dprintk(SYNX_ERR, "invalid session\n");
+		return -SYNX_INVALID;
+	}
+	return session->ops->async_wait_n(session, params);
+}
+EXPORT_SYMBOL_GPL(synx_async_wait_n);
+
 int synx_recover(enum synx_client_id id)
 {
 	int ret = 0;
@@ -221,6 +234,17 @@ int synx_cancel_async_wait(struct synx_session *session,
 	return session->ops->cancel_async_wait(session, params);
 }
 EXPORT_SYMBOL(synx_cancel_async_wait);
+
+int synx_cancel_async_wait_n(struct synx_session *session,
+	struct synx_callback_n_params *params)
+{
+	if (IS_ERR_OR_NULL(session) || !session->ops || !session->ops->cancel_async_wait_n) {
+		dprintk(SYNX_ERR, "invalid session\n");
+		return -SYNX_INVALID;
+	}
+	return session->ops->cancel_async_wait_n(session, params);
+}
+EXPORT_SYMBOL_GPL(synx_cancel_async_wait_n);
 
 int synx_enable_resources(enum synx_client_id id, enum synx_resource_type resource, bool enable)
 {

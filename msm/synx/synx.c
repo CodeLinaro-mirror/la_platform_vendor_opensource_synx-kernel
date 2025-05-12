@@ -969,9 +969,14 @@ static int synx_match_payload(struct synx_kernel_payload *cb_payload,
 		return -SYNX_INVALID;
 	}
 
-	if ((cb_payload->cb_func == payload->cb_func) &&
-			(cb_payload->data == payload->data)) {
-		if (payload->cancel_cb_func) {
+	if ((cb_payload->cb_func == payload->cb_func ||
+		cb_payload->cb_func_v2 == payload->cb_func_v2) &&
+			cb_payload->data == payload->data) {
+		if (payload->cancel_cb_func_v2) {
+			cb_payload->cb_func_v2 =
+				payload->cancel_cb_func_v2;
+			rc = 1;
+		} else if (payload->cancel_cb_func) {
 			cb_payload->cb_func =
 				payload->cancel_cb_func;
 			rc = 1;
@@ -1082,27 +1087,20 @@ static int synx_start_timer(struct synx_cb_data *synx_cb)
 	return rc;
 }
 
-int synx_internal_async_wait(struct synx_session *session,
-	struct synx_callback_params *params)
+static int synx_native_async_wait_core(struct synx_session *session,
+	struct synx_client *client, struct synx_callback_params *params,
+	bool is_cb_v2)
 {
-	int rc = 0;
+	int rc = SYNX_SUCCESS;
 	u32 idx;
 	u32 status;
-	struct synx_client *client;
 	struct synx_handle_coredata *synx_data;
 	struct synx_coredata *synx_obj;
 	struct synx_cb_data *synx_cb;
-	struct synx_kernel_payload payload;
+	struct synx_kernel_payload payload = {0};
 
-	if (IS_ERR_OR_NULL(session) || IS_ERR_OR_NULL(params))
+	if (IS_ERR_OR_NULL(params) || IS_ERR_OR_NULL(params->cb_func))
 		return -SYNX_INVALID;
-
-	client = synx_get_client(session);
-	if (IS_ERR_OR_NULL(client)) {
-		dprintk(SYNX_ERR, "invalid client\n");
-		return -SYNX_INVALID;
-	}
-
 	synx_data = synx_util_acquire_handle(client, params->h_synx);
 	synx_obj = synx_util_obtain_object(synx_data);
 	if (IS_ERR_OR_NULL(synx_obj)) {
@@ -1121,7 +1119,11 @@ int synx_internal_async_wait(struct synx_session *session,
 	}
 
 	payload.h_synx = params->h_synx;
-	payload.cb_func = params->cb_func;
+	if (is_cb_v2)
+		payload.cb_func_v2 = (synx_user_callback_v2_t)(void *)params->cb_func;
+	else
+		payload.cb_func = (synx_user_callback_t)params->cb_func;
+
 	payload.data = params->userdata;
 
 	/* allocate a free index from client cb table */
@@ -1173,9 +1175,11 @@ int synx_internal_async_wait(struct synx_session *session,
 			rc = synx_start_timer(synx_cb);
 			if (rc != SYNX_SUCCESS) {
 				dprintk(SYNX_ERR,
-					"[sess :%llu] timer start failed - synx_cb: %p, params->timeout_ms: 0x%llx, handle: 0x%x, ret : %d\n",
-					client->id, synx_cb, params->timeout_ms,
-					params->h_synx, rc);
+					"[sess :%llu] timer start failed - synx_cb: %p",
+					client->id, synx_cb);
+				dprintk(SYNX_ERR,
+					"params->timeout_ms: 0x%llx, handle: 0x%x, ret : %d\n",
+					params->timeout_ms, params->h_synx, rc);
 				goto release;
 			}
 		}
@@ -1192,33 +1196,26 @@ release:
 	mutex_unlock(&synx_obj->obj_lock);
 fail:
 	synx_util_release_handle(synx_data);
-	synx_put_client(client);
+
 	return rc;
 }
 
-int synx_internal_cancel_async_wait(
-	struct synx_session *session,
-	struct synx_callback_params *params)
+static int synx_native_cancel_async_wait_core(struct synx_session *session,
+	struct synx_client *client, struct synx_callback_params *params,
+	bool is_cb_v2)
+
 {
 	int rc = 0, ret = 0;
 	u32 status;
 	bool match_found = false;
-	struct synx_client *client;
 	struct synx_handle_coredata *synx_data;
 	struct synx_coredata *synx_obj;
 	struct synx_kernel_payload payload;
 	struct synx_cb_data *synx_cb, *synx_cb_temp;
 	struct synx_client_cb *cb_payload;
 
-	if (IS_ERR_OR_NULL(session) || IS_ERR_OR_NULL(params))
+	if (IS_ERR_OR_NULL(params) || IS_ERR_OR_NULL(params->cb_func))
 		return -SYNX_INVALID;
-
-	client = synx_get_client(session);
-	if (IS_ERR_OR_NULL(client)) {
-		dprintk(SYNX_ERR, "invalid client\n");
-		return -SYNX_INVALID;
-	}
-
 	synx_data = synx_util_acquire_handle(client, params->h_synx);
 	synx_obj = synx_util_obtain_object(synx_data);
 	if (IS_ERR_OR_NULL(synx_obj)) {
@@ -1237,9 +1234,14 @@ int synx_internal_cancel_async_wait(
 	}
 
 	payload.h_synx = params->h_synx;
-	payload.cb_func = params->cb_func;
+	if (is_cb_v2) {
+		payload.cb_func_v2 = (synx_user_callback_v2_t)(void *)params->cb_func;
+		payload.cancel_cb_func_v2 = (synx_user_callback_v2_t)(void *)params->cancel_cb_func;
+	} else {
+		payload.cb_func = (synx_user_callback_t)params->cb_func;
+		payload.cancel_cb_func = (synx_user_callback_t)params->cancel_cb_func;
+	}
 	payload.data = params->userdata;
-	payload.cancel_cb_func = params->cancel_cb_func;
 
 	status = synx_util_get_object_status(synx_obj);
 	if (status != SYNX_STATE_ACTIVE) {
@@ -1321,6 +1323,192 @@ release:
 	mutex_unlock(&synx_obj->obj_lock);
 fail:
 	synx_util_release_handle(synx_data);
+
+	return rc;
+}
+
+int synx_internal_async_wait(struct synx_session *session,
+	struct synx_callback_params *params)
+{
+	int rc = 0;
+	struct synx_client *client;
+
+	if (IS_ERR_OR_NULL(session) || IS_ERR_OR_NULL(params))
+		return -SYNX_INVALID;
+
+	client = synx_get_client(session);
+	if (IS_ERR_OR_NULL(client)) {
+		dprintk(SYNX_ERR, "invalid client\n");
+		return -SYNX_INVALID;
+	}
+
+	rc = synx_native_async_wait_core(session, client, params, false);
+	if (rc) {
+		dprintk(SYNX_ERR, "[sess :%llu] async wait failed for handle %u, rc %d\n",
+			client->id, params->h_synx, rc);
+	} else {
+		dprintk(SYNX_VERB, "[sess :%llu] async wait successful, handle %u\n",
+			client->id, params->h_synx);
+	}
+	synx_put_client(client);
+	return rc;
+}
+
+int synx_internal_async_wait_n(struct synx_session *session,
+	struct synx_callback_n_params *params)
+{
+	int rc = 0, result = 0;
+	u32 idx = 0;
+	struct synx_client *client = NULL;
+	struct synx_callback_params param = {0};
+
+	if (IS_ERR_OR_NULL(session) || IS_ERR_OR_NULL(params))
+		return -SYNX_INVALID;
+
+	client = synx_get_client(session);
+	if (IS_ERR_OR_NULL(client)) {
+		dprintk(SYNX_ERR, "invalid client\n");
+		return -SYNX_INVALID;
+	}
+
+	if (params->type == SYNX_CALLBACK_ARR_PARAMS) {
+		if (IS_ERR_OR_NULL(params->arr.list) || params->arr.num_fences == 0
+			|| params->arr.num_fences >= SYNX_MAX_OBJS) {
+			synx_put_client(client);
+			dprintk(SYNX_ERR, "invalid arguments\n");
+			return -SYNX_INVALID;
+		}
+		for (idx = 0; idx < params->arr.num_fences; idx++) {
+			param.h_synx = params->arr.list[idx].h_synx;
+			param.timeout_ms = params->arr.list[idx].timeout_ms;
+			param.cb_func = (synx_user_callback_t)(void *)params->arr.list[idx].cb_func;
+			param.userdata = params->arr.list[idx].userdata;
+			result = synx_native_async_wait_core(session, client, &param, true);
+			if (result) {
+				dprintk(SYNX_ERR, "[sess :%llu] async wait failed hsynx %u rc %d\n",
+					client->id, params->arr.list[idx].h_synx, result);
+			} else {
+				dprintk(SYNX_VERB, "[sess :%llu] async wait successful, hsynx %u\n",
+					client->id, params->arr.list[idx].h_synx);
+			}
+			params->arr.list[idx].result = result;
+			if (!rc)
+				rc = result;
+		}
+	} else if (params->type == SYNX_CALLBACK_INDV_PARAMS) {
+		param.h_synx = params->indv.h_synx;
+		param.timeout_ms = params->indv.timeout_ms;
+		param.cb_func = (synx_user_callback_t)(void *)params->indv.cb_func;
+		param.userdata = params->indv.userdata;
+		result = synx_native_async_wait_core(session, client, &param, true);
+		params->indv.result = result;
+		if (result) {
+			dprintk(SYNX_ERR, "[sess :%llu] async wait failed hsynx %u, rc %d\n",
+				client->id, params->indv.h_synx, result);
+		} else {
+			dprintk(SYNX_VERB, "[sess :%llu] async wait successful, hsynx %u\n",
+				client->id, params->indv.h_synx);
+		}
+		rc = result;
+	}
+	synx_put_client(client);
+	return rc;
+}
+
+int synx_internal_cancel_async_wait(
+	struct synx_session *session,
+	struct synx_callback_params *params)
+{
+	int rc = 0;
+	struct synx_client *client;
+
+	if (IS_ERR_OR_NULL(session) || IS_ERR_OR_NULL(params))
+		return -SYNX_INVALID;
+
+	client = synx_get_client(session);
+	if (IS_ERR_OR_NULL(client)) {
+		dprintk(SYNX_ERR, "invalid client\n");
+		return -SYNX_INVALID;
+	}
+
+	rc = synx_native_cancel_async_wait_core(session, client, params, false);
+	if (rc) {
+		dprintk(SYNX_ERR, "[sess :%llu] Cancel async wait failed hsynx %u rc %d\n",
+			client->id, params->h_synx, rc);
+	} else {
+		dprintk(SYNX_VERB, "[sess :%llu] Cancel async wait successful hsynx %u\n",
+			client->id, params->h_synx);
+	}
+	synx_put_client(client);
+	return rc;
+}
+
+int synx_internal_cancel_async_wait_n(
+	struct synx_session *session,
+	struct synx_callback_n_params *params)
+{
+	int rc = 0, result = 0;
+	struct synx_client *client = NULL;
+	u32 idx = 0;
+	struct synx_callback_params param = {0};
+
+	if (IS_ERR_OR_NULL(session) || IS_ERR_OR_NULL(params))
+		return -SYNX_INVALID;
+
+	client = synx_get_client(session);
+	if (IS_ERR_OR_NULL(client)) {
+		dprintk(SYNX_ERR, "invalid client\n");
+		return -SYNX_INVALID;
+	}
+	if (params->type == SYNX_CALLBACK_ARR_PARAMS) {
+		if (IS_ERR_OR_NULL(params->arr.list) || params->arr.num_fences == 0
+			|| params->arr.num_fences >= SYNX_MAX_OBJS) {
+			synx_put_client(client);
+			dprintk(SYNX_ERR, "invalid arguments\n");
+			return -SYNX_INVALID;
+		}
+		for (idx = 0; idx < params->arr.num_fences; idx++) {
+			param.h_synx = params->arr.list[idx].h_synx;
+			param.cb_func =
+				(synx_user_callback_t)(void *)params->arr.list[idx].cb_func;
+			param.cancel_cb_func =
+				(synx_user_callback_t)(void *)params->arr.list[idx].cancel_cb_func;
+			param.userdata = params->arr.list[idx].userdata;
+			result = synx_native_cancel_async_wait_core(session, client, &param, true);
+			if (result) {
+				dprintk(SYNX_ERR,
+					"[sess :%llu] Cancel async wait failed hsynx %u, rc %d\n",
+					client->id, params->arr.list[idx].h_synx, result);
+			} else {
+				dprintk(SYNX_VERB,
+					"[sess :%llu] Cancel async wait successful hsynx %u\n",
+					client->id, params->arr.list[idx].h_synx);
+			}
+			params->arr.list[idx].result = result;
+			if (!rc)
+				rc = result;
+		}
+	} else if (params->type == SYNX_CALLBACK_INDV_PARAMS) {
+		param.h_synx = params->indv.h_synx;
+		param.cb_func =
+			(synx_user_callback_t)(void *)params->indv.cb_func;
+		param.cancel_cb_func =
+			(synx_user_callback_t)(void *)params->indv.cancel_cb_func;
+		param.userdata = params->indv.userdata;
+		result = synx_native_cancel_async_wait_core(session, client, &param, true);
+		params->indv.result = result;
+		if (result) {
+			dprintk(SYNX_ERR,
+				"[sess :%llu] Cancel async wait failed hsynx %u, rc %d\n",
+				client->id, params->indv.h_synx, result);
+		} else {
+			dprintk(SYNX_VERB,
+				"[sess :%llu] Cancel async wait successful hsynx %u\n",
+				client->id, params->indv.h_synx);
+		}
+		rc = result;
+	}
+
 	synx_put_client(client);
 	return rc;
 }
@@ -3329,6 +3517,89 @@ static int synx_handle_async_wait(
 	return rc;
 }
 
+static int synx_handle_async_wait_n(
+	struct synx_private_ioctl_arg *k_ioctl,
+	struct synx_session *session)
+{
+	int rc = 0;
+	struct synx_userpayload_n_info user_data = {0};
+	struct synx_callback_n_params params = {0};
+	struct synx_userpayload_indv_info *arr_params = NULL;
+	u32 idx = 0;
+
+	if (k_ioctl->size != sizeof(user_data))
+		return -SYNX_INVALID;
+
+	if (copy_from_user(&user_data, u64_to_user_ptr(k_ioctl->ioctl_ptr),
+			k_ioctl->size))
+		return -EFAULT;
+
+	if (user_data.type == SYNX_CALLBACK_ARR_PARAMS) {
+		if (user_data.arr.num_objs >= SYNX_MAX_OBJS || user_data.arr.num_objs == 0
+			|| user_data.arr.list == 0)
+			return -SYNX_INVALID;
+
+		arr_params = kcalloc(user_data.arr.num_objs, sizeof(*arr_params), GFP_KERNEL);
+		if (IS_ERR_OR_NULL(arr_params))
+			return -ENOMEM;
+
+		if (copy_from_user(arr_params,
+				u64_to_user_ptr(user_data.arr.list),
+				sizeof(*arr_params) * user_data.arr.num_objs)) {
+			kfree(arr_params);
+			return -EFAULT;
+		}
+		params.type = user_data.type;
+		params.arr.num_fences = user_data.arr.num_objs;
+		params.arr.list = kcalloc(params.arr.num_fences,
+					sizeof(struct synx_callback_indv_params), GFP_KERNEL);
+		if (IS_ERR_OR_NULL(params.arr.list)) {
+			kfree(arr_params);
+			return -ENOMEM;
+		}
+		for (idx = 0; idx < params.arr.num_fences; idx++) {
+			params.arr.list[idx].h_synx = arr_params[idx].synx_obj;
+			params.arr.list[idx].userdata = (void *)arr_params[idx].payload[0];
+			params.arr.list[idx].cb_func = synx_util_user_callback_v2;
+			params.arr.list[idx].timeout_ms = arr_params[idx].payload[2];
+		}
+		rc = synx_async_wait_n(session, &params);
+		if (rc) {
+			dprintk(SYNX_ERR, "user cb batch registration failed\n");
+			for (idx = 0; idx < params.arr.num_fences; idx++) {
+				arr_params[idx].result = params.arr.list[idx].result;
+				dprintk(SYNX_ERR, "Handle: %u async wait result: %d\n",
+					params.arr.list[idx].h_synx, params.arr.list[idx].result);
+			}
+		} else
+			dprintk(SYNX_DBG, "user cb batch registration successful\n");
+
+		if (copy_to_user(u64_to_user_ptr(user_data.arr.list),
+			arr_params,
+			sizeof(*arr_params) * user_data.arr.num_objs)) {
+			rc = -EFAULT;
+			dprintk(SYNX_ERR, "Copy to user failed for batch async wait.");
+		}
+		kfree(arr_params);
+		kfree(params.arr.list);
+	} else if (user_data.type == SYNX_CALLBACK_INDV_PARAMS) {
+		params.type = user_data.type;
+		params.indv.h_synx = user_data.indv.synx_obj;
+
+		params.indv.userdata = (void *)user_data.indv.payload[0];
+		params.indv.cb_func = synx_util_user_callback_v2;
+		params.indv.timeout_ms = user_data.indv.payload[2];
+
+		rc = synx_async_wait_n(session, &params);
+		if (rc)
+			dprintk(SYNX_ERR, "user cb indv registration failed\n");
+		else
+			dprintk(SYNX_DBG, "user cb indv registration successful\n");
+	}
+
+	return rc;
+}
+
 static int synx_handle_cancel_async_wait(
 	struct synx_private_ioctl_arg *k_ioctl,
 	struct synx_session *session)
@@ -3354,6 +3625,85 @@ static int synx_handle_cancel_async_wait(
 		dprintk(SYNX_ERR,
 			"user cb deregistration failed for handle %d\n",
 			user_data.synx_obj);
+
+	return rc;
+}
+
+static int synx_handle_cancel_async_wait_n(
+	struct synx_private_ioctl_arg *k_ioctl,
+	struct synx_session *session)
+{
+	int rc = 0;
+	struct synx_userpayload_n_info user_data = {0};
+	struct synx_callback_n_params params = {0};
+	struct synx_userpayload_indv_info *arr_params = NULL;
+	u32 idx = 0;
+
+	if (k_ioctl->size != sizeof(user_data))
+		return -SYNX_INVALID;
+
+	if (copy_from_user(&user_data,
+			u64_to_user_ptr(k_ioctl->ioctl_ptr),
+			k_ioctl->size))
+		return -EFAULT;
+
+	if (user_data.type == SYNX_CALLBACK_ARR_PARAMS) {
+		if (user_data.arr.num_objs >= SYNX_MAX_OBJS || user_data.arr.num_objs == 0
+			|| user_data.arr.list == 0)
+			return -SYNX_INVALID;
+		arr_params = kcalloc(user_data.arr.num_objs, sizeof(*arr_params), GFP_KERNEL);
+		if (IS_ERR_OR_NULL(arr_params))
+			return -ENOMEM;
+
+		if (copy_from_user(arr_params,
+				u64_to_user_ptr(user_data.arr.list),
+				sizeof(*arr_params) * user_data.arr.num_objs)) {
+			kfree(arr_params);
+			return -EFAULT;
+		}
+		params.type = user_data.type;
+		params.arr.num_fences = user_data.arr.num_objs;
+		params.arr.list = kcalloc(params.arr.num_fences,
+					sizeof(struct synx_callback_indv_params), GFP_KERNEL);
+		if (IS_ERR_OR_NULL(params.arr.list)) {
+			kfree(arr_params);
+			return -ENOMEM;
+		}
+		for (idx = 0; idx < params.arr.num_fences; idx++) {
+			params.arr.list[idx].h_synx = arr_params[idx].synx_obj;
+			params.arr.list[idx].userdata = (void *)arr_params[idx].payload[0];
+			params.arr.list[idx].cb_func = synx_util_user_callback_v2;
+		}
+		rc = synx_cancel_async_wait_n(session, &params);
+		if (rc) {
+			dprintk(SYNX_ERR, "user cb batch deregistration failed\n");
+			for (idx = 0; idx < params.arr.num_fences; idx++) {
+				arr_params[idx].result = params.arr.list[idx].result;
+				dprintk(SYNX_ERR, "Handle: %u cancel async wait result: %d\n",
+					params.arr.list[idx].h_synx, params.arr.list[idx].result);
+			}
+		} else
+			dprintk(SYNX_DBG, "user cb batch deregistration successful\n");
+
+		if (copy_to_user(u64_to_user_ptr(user_data.arr.list),
+			arr_params,
+			sizeof(*arr_params) * user_data.arr.num_objs)) {
+			rc = -EFAULT;
+			dprintk(SYNX_ERR, "Copy to user failed for batch cancel async wait.");
+		}
+		kfree(arr_params);
+		kfree(params.arr.list);
+	} else if (user_data.type == SYNX_CALLBACK_INDV_PARAMS) {
+		params.type = user_data.type;
+		params.indv.h_synx = user_data.indv.synx_obj;
+		params.indv.userdata = (void *)user_data.indv.payload[0];
+		params.indv.cb_func = synx_util_user_callback_v2;
+		rc = synx_cancel_async_wait_n(session, &params);
+		if (rc)
+			dprintk(SYNX_ERR, "user cb indv deregistration failed\n");
+		else
+			dprintk(SYNX_DBG, "user cb indv deregistration successful\n");
+	}
 
 	return rc;
 }
@@ -3587,8 +3937,16 @@ static long synx_ioctl(struct file *filep,
 		rc = synx_handle_async_wait(&k_ioctl,
 				session);
 		break;
+	case SYNX_REGISTER_PAYLOAD_N:
+		rc = synx_handle_async_wait_n(&k_ioctl,
+				session);
+		break;
 	case SYNX_DEREGISTER_PAYLOAD:
 		rc = synx_handle_cancel_async_wait(&k_ioctl,
+				session);
+		break;
+	case SYNX_DEREGISTER_PAYLOAD_N:
+		rc = synx_handle_cancel_async_wait_n(&k_ioctl,
 				session);
 		break;
 	case SYNX_SIGNAL:
@@ -3654,9 +4012,10 @@ static ssize_t synx_read(struct file *filep,
 	struct synx_client *client = NULL;
 	struct synx_client_cb *cb;
 	struct synx_session *session = filep->private_data;
-	struct synx_userpayload_info_v2 data;
+	struct synx_userpayload_indv_info data;
 
-	if (size != sizeof(struct synx_userpayload_info_v2)) {
+	if (size != sizeof(struct synx_userpayload_indv_info) &&
+		size != sizeof(struct synx_userpayload_info_v2)) {
 		dprintk(SYNX_ERR, "invalid read size\n");
 		return -SYNX_INVALID;
 	}
@@ -3685,15 +4044,14 @@ static ssize_t synx_read(struct file *filep,
 
 	list_del_init(&cb->node);
 	mutex_unlock(&client->event_q_lock);
-	memset(&data, 0, sizeof(struct synx_userpayload_info_v2));
+	memset(&data, 0, size);
 
 	rc = size;
 	data.synx_obj = cb->kernel_cb.h_synx;
-	data.reserved = cb->kernel_cb.status;
+	data.status = cb->kernel_cb.status;
 	data.payload[0] = (u64)cb->kernel_cb.data;
-	if (copy_to_user(buf,
-			&data,
-			sizeof(struct synx_userpayload_info_v2))) {
+	data.payload[3] = cb->kernel_cb.client_data;
+	if (copy_to_user(buf, &data, size)) {
 		dprintk(SYNX_ERR, "couldn't copy user callback data\n");
 		rc = -EFAULT;
 	}
@@ -4100,6 +4458,7 @@ static int synx_internal_init_ops(struct synx_ops *synx_ops)
 	synx_ops->release_n = synx_internal_release_n;
 	synx_ops->signal = synx_internal_signal;
 	synx_ops->async_wait = synx_internal_async_wait;
+	synx_ops->async_wait_n = synx_internal_async_wait_n;
 	synx_ops->get_fence = synx_internal_get_fence;
 	synx_ops->import = synx_internal_import;
 	synx_ops->get_status = synx_internal_get_status;
@@ -4107,6 +4466,7 @@ static int synx_internal_init_ops(struct synx_ops *synx_ops)
 	synx_ops->merge_n = synx_internal_merge_n;
 	synx_ops->wait = synx_internal_wait;
 	synx_ops->cancel_async_wait = synx_internal_cancel_async_wait;
+	synx_ops->cancel_async_wait_n = synx_internal_cancel_async_wait_n;
 
 	return SYNX_SUCCESS;
 }

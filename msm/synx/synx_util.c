@@ -1489,6 +1489,27 @@ void synx_util_default_user_callback(u32 h_synx,
 	}
 }
 
+void synx_util_user_callback_v2(struct synx_callback_response *cb_response)
+{
+	struct synx_client_cb *cb = cb_response->userdata;
+	struct synx_client *client = NULL;
+
+	if (cb && cb->client) {
+		client = cb->client;
+		dprintk(SYNX_VERB,
+			"[sess :%llu] user cb queued for handle %d\n",
+			client->id, cb_response->h_synx);
+		cb->kernel_cb.status = cb_response->status;
+		cb->kernel_cb.client_data = cb_response->client_data;
+		mutex_lock(&client->event_q_lock);
+		list_add_tail(&cb->node, &client->event_q);
+		mutex_unlock(&client->event_q_lock);
+		wake_up_all(&client->event_wq);
+	} else {
+		dprintk(SYNX_ERR, "invalid params\n");
+	}
+}
+
 void synx_util_callback_dispatch(struct synx_coredata *synx_obj, u32 status)
 {
 	struct synx_cb_data *synx_cb, *synx_cb_temp;
@@ -1526,6 +1547,7 @@ void synx_util_cb_dispatch(struct work_struct *cb_dispatch)
 	struct synx_client *client;
 	struct synx_client_cb *cb;
 	struct synx_kernel_payload payload;
+	struct synx_callback_response cb_response = {0};
 	u32 status;
 
 	client = synx_get_client(synx_cb->session);
@@ -1554,7 +1576,8 @@ void synx_util_cb_dispatch(struct work_struct *cb_dispatch)
 	memcpy(&payload, &cb->kernel_cb, sizeof(cb->kernel_cb));
 	payload.status = status;
 
-	if (payload.cb_func == synx_util_default_user_callback) {
+	if (payload.cb_func == synx_util_default_user_callback ||
+		payload.cb_func_v2 == synx_util_user_callback_v2) {
 		/*
 		 * need to send client cb data for default
 		 * user cb (userspace cb)
@@ -1577,9 +1600,16 @@ void synx_util_cb_dispatch(struct work_struct *cb_dispatch)
 		payload.h_synx, payload.status, payload.data);
 
 	/* dispatch kernel callback */
-	payload.cb_func(payload.h_synx,
-		payload.status, payload.data);
+	if (payload.cb_func_v2) {
+		cb_response.h_synx = payload.h_synx;
+		cb_response.status = payload.status;
+		cb_response.userdata = payload.data;
 
+		/* Actual client data can be fetched from shared memory here*/
+		cb_response.client_data = SYNX_NO_CLIENT_DATA;
+		payload.cb_func_v2(&cb_response);
+	} else if (payload.cb_func)
+		payload.cb_func(payload.h_synx, payload.status, payload.data);
 fail:
 	synx_put_client(client);
 free:
