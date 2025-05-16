@@ -246,6 +246,7 @@ struct global_partition_header {
 	uint32_t partition_type;
 	uint32_t region_offset;
 	uint32_t region_size;
+	uint32_t custom_value;
 };
 
 struct ipcmem_global_partition {
@@ -452,6 +453,7 @@ const struct global_partition_header global_partition_hdr = {
 	GLOBAL_PARTITION_TYPE,
 	GLOBAL_REGION_OFFSET,
 	GLOBAL_REGION_SIZE,
+	0,
 };
 
 const struct atomic_partition_header atomic_partition_hdr = {

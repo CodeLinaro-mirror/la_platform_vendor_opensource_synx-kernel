@@ -1009,7 +1009,7 @@ static int32_t ipcmem_init(struct ipclite_mem *ipcmem, struct device_node *pn)
 {
 	int ret = 0;
 	size_t toc_offset = 0, partition_offset = 0;
-	uint32_t remote_pid;
+	uint32_t remote_pid, custom_value = 0;
 	struct device_node *cn;
 	struct ipcmem_offsets *offsets;
 	struct ipcmem_toc_data *toc_data = &ipcmem->toc_data;
@@ -1041,6 +1041,9 @@ static int32_t ipcmem_init(struct ipclite_mem *ipcmem, struct device_node *pn)
 
 	partition_offset += IPCMEM_TOC_SIZE;
 	setup_global_partition(ipcmem, partition_offset);
+	ret = of_property_read_u32(pn, "global_par_custom_val", &custom_value);
+
+	ipcmem->global_partition->hdr.custom_value = custom_value;
 
 	/* Setup Partition info*/
 	offsets->partition_info = toc_offset += sizeof(struct ipcmem_partition_entry);
@@ -1785,6 +1788,7 @@ static int32_t get_global_partition_info_v0(struct global_region_info *global_ip
 	global_ipcmem->virt_base = (void *)((char *)global_partition +
 							global_partition->hdr.region_offset);
 	global_ipcmem->size = (size_t)(global_partition->hdr.region_size);
+	global_ipcmem->custom_value = global_partition->hdr.custom_value;
 
 	IPCLITE_LOG(LOW, "base = %p, size= %u ", global_ipcmem->virt_base,
 									global_ipcmem->size);
