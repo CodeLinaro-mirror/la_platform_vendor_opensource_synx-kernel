@@ -1074,7 +1074,10 @@ static void synx_util_cleanup_fence(
 		if (g_status > SYNX_STATE_ACTIVE) {
 			dprintk(SYNX_DBG, "signaling fence %pK with status %u\n",
 				synx_obj->fence, g_status);
-			synx_native_signal_fence(synx_obj, g_status);
+			if (synx_util_is_merged_object(synx_obj))
+				synx_native_signal_merged_fence(synx_obj, g_status);
+			else
+				synx_native_signal_fence(synx_obj, g_status);
 		} else {
 			spin_lock_irqsave(synx_obj->fence->lock, flags);
 			if (synx_util_get_object_status_locked(synx_obj) ==

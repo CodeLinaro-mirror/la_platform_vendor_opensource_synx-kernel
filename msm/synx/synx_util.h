@@ -20,6 +20,9 @@ extern void synx_fence_callback(struct dma_fence *fence,
 extern int synx_native_signal_fence(struct synx_coredata *synx_obj,
 	u32 status);
 
+extern int synx_native_signal_merged_fence(struct synx_coredata *synx_obj,
+	u32 status);
+
 static inline bool synx_util_is_valid_bind_type(u32 type)
 {
 	if (type < SYNX_MAX_BIND_TYPES)
@@ -188,5 +191,6 @@ struct bind_operations *synx_util_get_bind_ops(u32 type);
 u32 synx_util_map_client_id_to_core(enum synx_client_id id);
 
 int synx_get_child_coredata(struct synx_coredata *synx_obj, struct synx_coredata ***child_synx_obj, int *num_fences);
+
 
 #endif /* __SYNX_UTIL_H__ */
