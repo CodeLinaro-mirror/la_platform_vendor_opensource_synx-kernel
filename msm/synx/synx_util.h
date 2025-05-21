@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef __SYNX_UTIL_H__
@@ -103,6 +103,7 @@ struct synx_map_entry *synx_util_insert_to_map(struct synx_coredata *synx_obj,
 struct synx_map_entry *synx_util_get_map_entry(u32 h_synx);
 void synx_util_release_map_entry(struct synx_map_entry *map_entry);
 void synx_util_destroy_map_entry(struct kref *kref);
+int synx_util_local_map_is_empty(unsigned long *bitmap, unsigned int size);
 /* fence map functions */
 int synx_util_insert_fence_entry(struct synx_fence_entry *entry, u32 *h_synx,
 			u32 global);
