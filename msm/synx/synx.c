@@ -2084,6 +2084,20 @@ retry:
 	*params->new_h_synx =
 		synx_util_get_fence_entry((u64)params->fence, global);
 	if (*params->new_h_synx == 0) {
+		if (dma_fence_is_array((struct dma_fence *)params->fence)) {
+			if (!test_bit(SYNX_NATIVE_FENCE_FLAG_ENABLED_BIT,
+				&((struct dma_fence *)params->fence)->flags)) {
+				dprintk(SYNX_ERR, "External dma-array import not supported %pK\n",
+					params->fence);
+				return -SYNX_NOSUPPORT;
+			}
+			// Only allow support if dma-fence-array is signaled.
+			if (!dma_fence_is_signaled((struct dma_fence *)params->fence)) {
+				dprintk(SYNX_ERR, "unsignaled dma array import not allowed %pK\n",
+					params->fence);
+				return -SYNX_NOSUPPORT;
+			}
+		}
 		/* create a new synx obj and add to fence map */
 		synx_util_map_import_params_to_create(params, &c_params);
 		scnprintf(name, SYNX_OBJ_NAME_LEN, "import-client-%d",
@@ -2255,11 +2269,6 @@ static int synx_native_import_indv(struct synx_client *client,
 
 	if (likely(params->flags & SYNX_IMPORT_DMA_FENCE) && !IS_ERR_OR_NULL(params->fence)) {
 
-		if (dma_fence_is_array(params->fence)) {
-			dprintk(SYNX_ERR, "Cannot import dma fence array %pK\n", params->fence);
-			rc = -SYNX_NOSUPPORT;
-			goto bail;
-		}
 
 		rc = synx_native_import_fence(client, params);
 	} else if ((params->flags &
@@ -2267,7 +2276,6 @@ static int synx_native_import_indv(struct synx_client *client,
 		rc = synx_native_import_handle(client, params);
 	}
 
-bail:
 	if ((flags & SYNX_IMPORT_SYNX_FENCE) && IS_HW_FENCE(hw_fence)) {
 		dma_fence_put((struct dma_fence *)params->fence);
 		params->fence = fence;
