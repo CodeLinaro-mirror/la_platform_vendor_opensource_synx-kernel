@@ -12,6 +12,12 @@
 
 static struct synx_shared_mem synx_gmem;
 static struct hwspinlock *synx_hwlock;
+static uint32_t glcoredata_size;
+
+static inline struct synx_global_coredata *synx_fetch_global_coredata_object(u32 idx)
+{
+	return (struct synx_global_coredata *)((uint8_t *)synx_gmem.table + idx * glcoredata_size);
+}
 
 static u32 synx_gmem_lock_owner(u32 idx)
 {
@@ -108,8 +114,8 @@ bool synx_fetch_global_shared_memory_handle_details(u32 synx_handle,
 		dprintk(SYNX_ERR, "Failed to lock entry %u\n", idx);
 		return false;
 	}
-	entry = &synx_gmem.table[idx];
-	memcpy(synx_global_entry, entry, sizeof(struct synx_global_coredata));
+	entry = synx_fetch_global_coredata_object(idx);
+	memcpy(synx_global_entry, entry, glcoredata_size);
 	synx_gmem_unlock(idx, &flags);
 
 	return true;
@@ -154,7 +160,7 @@ int synx_global_dump_shared_memory(void)
 
 		dprintk(SYNX_VERB, "%s: idx %d\n", __func__, idx);
 
-		synx_g_obj = &synx_gmem.table[idx];
+		synx_g_obj = synx_fetch_global_coredata_object(idx);
 		synx_global_print_data(synx_g_obj, __func__);
 
 		synx_gmem_unlock(idx, &flags);
@@ -180,7 +186,7 @@ static int synx_gmem_init(void)
 	/* zero idx not allocated for clients */
 	ipclite_global_test_and_set_bit(0,
 		(ipclite_atomic_uint32_t *)synx_gmem.bitmap);
-	memset(&synx_gmem.table[0], 0, sizeof(struct synx_global_coredata));
+	memset(&synx_gmem.table[0], 0, glcoredata_size);
 
 	return SYNX_SUCCESS;
 }
@@ -308,7 +314,7 @@ int synx_global_init_coredata(u32 h_synx)
 		dprintk(SYNX_ERR, "Failed to lock entry %u\n", idx);
 		return rc;
 	}
-	synx_g_obj = &synx_gmem.table[idx];
+	synx_g_obj = synx_fetch_global_coredata_object(idx);
 	if (synx_g_obj->status != 0 || synx_g_obj->refcount != 0 ||
 		synx_g_obj->subscribers != 0 || synx_g_obj->handle != 0 ||
 		synx_g_obj->parents[0] != 0) {
@@ -327,7 +333,7 @@ int synx_global_init_coredata(u32 h_synx)
 		synx_gmem_unlock(idx, &flags);
 		return -SYNX_INVALID;
 	}
-	memset(synx_g_obj, 0, sizeof(*synx_g_obj));
+	memset(synx_g_obj, 0, glcoredata_size);
 	/* set status to active */
 	synx_g_obj->status = SYNX_STATE_ACTIVE;
 	synx_g_obj->refcount = 1;
@@ -381,7 +387,7 @@ int synx_global_get_waiting_cores(u32 idx, bool *cores)
 		dprintk(SYNX_ERR, "Failed to lock entry %u\n", idx);
 		return rc;
 	}
-	synx_g_obj = &synx_gmem.table[idx];
+	synx_g_obj = synx_fetch_global_coredata_object(idx);
 	synx_global_get_waiting_cores_locked(synx_g_obj, cores);
 	synx_gmem_unlock(idx, &flags);
 
@@ -409,7 +415,7 @@ int synx_global_set_waiting_core(u32 idx, enum synx_core_id id)
 		dprintk(SYNX_ERR, "Failed to lock entry %u\n", idx);
 		return rc;
 	}
-	synx_g_obj = &synx_gmem.table[idx];
+	synx_g_obj = synx_fetch_global_coredata_object(idx);
 	synx_g_obj->waiters |= (1UL << id);
 	synx_gmem_unlock(idx, &flags);
 
@@ -438,7 +444,7 @@ int synx_global_get_subscribed_cores(u32 idx, bool *cores)
 		dprintk(SYNX_ERR, "Failed to lock entry %u\n", idx);
 		return rc;
 	}
-	synx_g_obj = &synx_gmem.table[idx];
+	synx_g_obj = synx_fetch_global_coredata_object(idx);
 	for (i = 0; i < SYNX_CORE_MAX; i++)
 		if (synx_g_obj->subscribers & (1UL << i))
 			cores[i] = true;
@@ -468,7 +474,7 @@ int synx_global_fetch_handle_details(u32 idx, u32 *h_synx)
 		dprintk(SYNX_ERR, "Failed to lock entry %u\n", idx);
 		return rc;
 	}
-	synx_g_obj = &synx_gmem.table[idx];
+	synx_g_obj = synx_fetch_global_coredata_object(idx);
 	*h_synx = synx_g_obj->handle;
 	synx_gmem_unlock(idx, &flags);
 
@@ -496,7 +502,7 @@ int synx_global_set_subscribed_core(u32 idx, enum synx_core_id id)
 		dprintk(SYNX_ERR, "Failed to lock entry %u\n", idx);
 		return rc;
 	}
-	synx_g_obj = &synx_gmem.table[idx];
+	synx_g_obj = synx_fetch_global_coredata_object(idx);
 	synx_g_obj->subscribers |= (1UL << id);
 	synx_gmem_unlock(idx, &flags);
 
@@ -524,7 +530,7 @@ int synx_global_clear_subscribed_core(u32 idx, enum synx_core_id id)
 		dprintk(SYNX_ERR, "Failed to lock entry %u\n", idx);
 		return rc;
 	}
-	synx_g_obj = &synx_gmem.table[idx];
+	synx_g_obj = synx_fetch_global_coredata_object(idx);
 	synx_g_obj->subscribers &= ~(1UL << id);
 	synx_gmem_unlock(idx, &flags);
 
@@ -553,7 +559,7 @@ u32 synx_global_get_parents_num(u32 idx)
 		dprintk(SYNX_ERR, "Failed to lock entry %u\n", idx);
 		return rc;
 	}
-	synx_g_obj = &synx_gmem.table[idx];
+	synx_g_obj = synx_fetch_global_coredata_object(idx);
 	for (i = 0; i < SYNX_GLOBAL_MAX_PARENTS; i++) {
 		if (synx_g_obj->parents[i] != 0)
 			count++;
@@ -600,7 +606,7 @@ int synx_global_get_parents(u32 idx, u32 *parents)
 		dprintk(SYNX_ERR, "Failed to lock entry %u\n", idx);
 		return rc;
 	}
-	synx_g_obj = &synx_gmem.table[idx];
+	synx_g_obj = synx_fetch_global_coredata_object(idx);
 	rc = synx_global_get_parents_locked(synx_g_obj, parents);
 	synx_gmem_unlock(idx, &flags);
 
@@ -629,7 +635,7 @@ u32 synx_global_get_status(u32 idx)
 		dprintk(SYNX_ERR, "Failed to lock entry %u\n", idx);
 		return rc;
 	}
-	synx_g_obj = &synx_gmem.table[idx];
+	synx_g_obj = synx_fetch_global_coredata_object(idx);
 	if (synx_g_obj->status != SYNX_STATE_ACTIVE && synx_g_obj->num_child == 0)
 		status = synx_g_obj->status;
 	synx_gmem_unlock(idx, &flags);
@@ -660,7 +666,7 @@ u32 synx_global_test_status_set_wait(u32 idx,
 		dprintk(SYNX_ERR, "Failed to lock entry %u\n", idx);
 		return 0;
 	}
-	synx_g_obj = &synx_gmem.table[idx];
+	synx_g_obj = synx_fetch_global_coredata_object(idx);
 	synx_global_print_data(synx_g_obj, __func__);
 	status = synx_g_obj->status;
 	/* if handle is still ACTIVE */
@@ -699,7 +705,7 @@ int synx_global_update_status_core(u32 idx,
 		dprintk(SYNX_ERR, "Failed to lock entry %u\n", idx);
 		return rc;
 	}
-	synx_g_obj = &synx_gmem.table[idx];
+	synx_g_obj = synx_fetch_global_coredata_object(idx);
 	synx_global_print_data(synx_g_obj, __func__);
 	/* prepare for cross core signaling */
 	data = synx_g_obj->handle;
@@ -727,7 +733,7 @@ int synx_global_update_status_core(u32 idx,
 			synx_g_obj->refcount--;
 			if (synx_g_obj->refcount == 0) {
 				memset(synx_g_obj, 0,
-					sizeof(*synx_g_obj));
+					glcoredata_size);
 				clear = true;
 			}
 		} else {
@@ -820,7 +826,7 @@ int synx_global_update_status(u32 idx, u32 status)
 		dprintk(SYNX_ERR, "Failed to lock entry %u\n", idx);
 		return rc;
 	}
-	synx_g_obj = &synx_gmem.table[idx];
+	synx_g_obj = synx_fetch_global_coredata_object(idx);
 	if (synx_g_obj->num_child != 0) {
 		/* composite handle cannot be signaled */
 		goto fail;
@@ -858,7 +864,7 @@ int synx_global_get_ref(u32 idx)
 		dprintk(SYNX_ERR, "Failed to lock entry %u\n", idx);
 		return rc;
 	}
-	synx_g_obj = &synx_gmem.table[idx];
+	synx_g_obj = synx_fetch_global_coredata_object(idx);
 	synx_global_print_data(synx_g_obj, __func__);
 	if (synx_g_obj->handle && synx_g_obj->refcount)
 		synx_g_obj->refcount++;
@@ -891,10 +897,10 @@ void synx_global_put_ref(u32 idx)
 		dprintk(SYNX_ERR, "Failed to lock entry %u\n", idx);
 		return;
 	}
-	synx_g_obj = &synx_gmem.table[idx];
+	synx_g_obj = synx_fetch_global_coredata_object(idx);
 	synx_g_obj->refcount--;
 	if (synx_g_obj->refcount == 0) {
-		memset(synx_g_obj, 0, sizeof(*synx_g_obj));
+		memset(synx_g_obj, 0, glcoredata_size);
 		clear = true;
 	}
 	synx_gmem_unlock(idx, &flags);
@@ -933,7 +939,7 @@ int synx_global_merge(u32 *idx_list, u32 num_list, u32 p_idx)
 	rc = synx_gmem_lock(p_idx, &flags);
 	if (rc)
 		return rc;
-	synx_g_obj = &synx_gmem.table[p_idx];
+	synx_g_obj = synx_fetch_global_coredata_object(p_idx);
 	if (synx_g_obj->handle && synx_g_obj->refcount) {
 		synx_g_obj->num_child += num_list;
 		synx_g_obj->refcount++;
@@ -954,7 +960,7 @@ int synx_global_merge(u32 *idx_list, u32 num_list, u32 p_idx)
 			goto fail;
 		}
 
-		synx_g_obj = &synx_gmem.table[idx];
+		synx_g_obj = synx_fetch_global_coredata_object(idx);
 		for (i = 0; i < SYNX_GLOBAL_MAX_PARENTS; i++) {
 			if (synx_g_obj->parents[i] == 0) {
 				synx_g_obj->parents[i] = p_idx;
@@ -990,7 +996,7 @@ int synx_global_merge(u32 *idx_list, u32 num_list, u32 p_idx)
 	rc = synx_gmem_lock(p_idx, &flags);
 	if (rc)
 		goto fail;
-	synx_g_obj = &synx_gmem.table[p_idx];
+	synx_g_obj = synx_fetch_global_coredata_object(p_idx);
 	synx_g_obj->num_child -= num_child_signaled;
 	if (synx_g_obj->num_child == 0 && num_child_signaled)
 		synx_g_obj->refcount -= 1;
@@ -1010,7 +1016,7 @@ fail:
 	if (err)
 		return err;
 
-	synx_g_obj = &synx_gmem.table[p_idx];
+	synx_g_obj = synx_fetch_global_coredata_object(p_idx);
 	synx_g_obj->num_child -= (num_child_signaled + (num_list - j));
 	synx_g_obj->status = SYNX_STATE_SIGNALED_ERROR;
 	if (synx_g_obj->num_child == 0)
@@ -1063,7 +1069,7 @@ int synx_global_recover_interop(enum synx_core_id core_id,
 		rc = synx_gmem_lock(idx, &flags);
 		if (rc)
 			goto free;
-		synx_g_obj = &synx_gmem.table[idx];
+		synx_g_obj = synx_fetch_global_coredata_object(idx);
 		if (synx_g_obj->refcount &&
 			 synx_g_obj->subscribers & (1UL << core_id)) {
 			synx_g_obj->subscribers &= ~(1UL << core_id);
@@ -1072,7 +1078,7 @@ int synx_global_recover_interop(enum synx_core_id core_id,
 			waiting_cores = synx_g_obj->waiters;
 
 			if (synx_g_obj->refcount == 0) {
-				memset(synx_g_obj, 0, sizeof(*synx_g_obj));
+				memset(synx_g_obj, 0, glcoredata_size);
 				clear_idx[idx] = 1;
 			} else if (synx_g_obj->status == SYNX_STATE_ACTIVE) {
 				update = true;
@@ -1138,7 +1144,7 @@ int synx_global_test_status_update_coredata(u32 idx,
 		dprintk(SYNX_ERR, "Failed to lock entry %u\n", idx);
 		return rc;
 	}
-	synx_g_obj = &synx_gmem.table[idx];
+	synx_g_obj = synx_fetch_global_coredata_object(idx);
 	synx_global_print_data(synx_g_obj, __func__);
 	status = synx_g_obj->status;
 	/* if handle is still ACTIVE */
@@ -1191,7 +1197,7 @@ int synx_global_recover_index(enum synx_core_id core_id, bool global_unlock,
 	rc = synx_gmem_lock(idx, &flags);
 	if (rc)
 		return rc;
-	synx_g_obj = &synx_gmem.table[idx];
+	synx_g_obj = synx_fetch_global_coredata_object(idx);
 	if (synx_g_obj->refcount &&
 			synx_g_obj->subscribers & (1UL << core_id)) {
 		synx_g_obj->subscribers &= ~(1UL << core_id);
@@ -1201,7 +1207,7 @@ int synx_global_recover_index(enum synx_core_id core_id, bool global_unlock,
 		h_hwfence = synx_g_obj->h_hwfence;
 
 		if (synx_g_obj->refcount == 0) {
-			memset(synx_g_obj, 0, sizeof(*synx_g_obj));
+			memset(synx_g_obj, 0, glcoredata_size);
 			clear = true;
 		} else if (synx_g_obj->status == SYNX_STATE_ACTIVE)
 			update = true;
@@ -1227,6 +1233,7 @@ int synx_global_mem_init(void)
 	int rc;
 	int bitmap_size = SYNX_GLOBAL_MAX_OBJS/32;
 	struct global_region_info mem_info;
+	void *gl_coredata = NULL;
 
 	rc = get_global_partition_info(&mem_info);
 	if (rc) {
@@ -1244,6 +1251,15 @@ int synx_global_mem_init(void)
 		(struct synx_global_coredata *)(synx_gmem.locks + 2);
 	dprintk(SYNX_DBG, "global memory bitmap %pK, table %pK\n",
 		synx_gmem.bitmap, synx_gmem.table);
+	glcoredata_size = (mem_info.custom_value == 0) ?
+		sizeof(struct synx_global_coredata) : mem_info.custom_value;
+	dprintk(SYNX_DBG, "Global coredata size is %u\n", glcoredata_size);
+
+	gl_coredata = synx_fetch_global_coredata_object(SYNX_GLOBAL_MAX_OBJS);
+	if ((uintptr_t)gl_coredata > (uintptr_t)((uint8_t *)mem_info.virt_base + mem_info.size)) {
+		dprintk(SYNX_ERR, "Global coredata outside of shared mem limits");
+		return -SYNX_INVALID;
+	}
 
 	return synx_gmem_init();
 }
