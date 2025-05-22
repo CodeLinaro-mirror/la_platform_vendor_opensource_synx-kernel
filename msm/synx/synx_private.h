@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef __SYNX_PRIVATE_H__
@@ -239,6 +239,7 @@ struct synx_device {
 };
 
 extern struct synx_ops synx_hwfence_ops;
+extern struct synx_ops synx_internal_ops;
 
 int synx_signal_core(struct synx_coredata *synx_obj,
 	u32 status,
