@@ -3091,6 +3091,9 @@ struct synx_session *synx_internal_initialize(
 		params->id >= SYNX_CLIENT_END)
 		return ERR_PTR(-SYNX_NOSUPPORT);
 
+	if (!synx_dev)
+		return ERR_PTR(-SYNX_INVALID);
+
 	client = vzalloc(sizeof(*client));
 	if (IS_ERR_OR_NULL(client)) {
 		dprintk(SYNX_ERR, "client allocation failed\n");
@@ -3110,9 +3113,6 @@ struct synx_session *synx_internal_initialize(
 	init_waitqueue_head(&client->event_wq);
 	/* zero idx not allowed */
 	set_bit(0, client->cb_bitmap);
-
-	if (!synx_dev)
-		return ERR_PTR(-SYNX_INVALID);
 
 	spin_lock_bh(&synx_dev->native->metadata_map_lock);
 	hash_add(synx_dev->native->client_metadata_map,
@@ -3435,6 +3435,29 @@ static int synx_cdsp_restart_notifier(struct notifier_block *nb,
 	return NOTIFY_DONE;
 }
 
+static int synx_internal_init_ops(struct synx_ops *synx_ops)
+{
+	if (IS_ERR_OR_NULL(synx_ops)) {
+		dprintk(SYNX_ERR, "Invalid pointer to synx_ops");
+		return -SYNX_INVALID;
+	}
+
+	synx_ops->uninitialize = synx_internal_uninitialize;
+	synx_ops->create = synx_internal_create;
+	synx_ops->release = synx_internal_release;
+	synx_ops->release_n = synx_internal_release_n;
+	synx_ops->signal = synx_internal_signal;
+	synx_ops->async_wait = synx_internal_async_wait;
+	synx_ops->get_fence = synx_internal_get_fence;
+	synx_ops->import = synx_internal_import;
+	synx_ops->get_status = synx_internal_get_status;
+	synx_ops->merge = synx_internal_merge;
+	synx_ops->wait = synx_internal_wait;
+	synx_ops->cancel_async_wait = synx_internal_cancel_async_wait;
+
+	return SYNX_SUCCESS;
+}
+
 static int __init synx_init(void)
 {
 	int rc;
@@ -3509,6 +3532,13 @@ static int __init synx_init(void)
 		dprintk(SYNX_ERR, "SSR registration failed\n");
 		goto err;
 	}
+
+	rc = synx_internal_init_ops(&synx_internal_ops);
+	if (rc) {
+		dprintk(SYNX_ERR, "synx_ops init failed, err=%d\n", rc);
+		goto err;
+	}
+
 	rc = synx_hwfence_init_ops(&synx_hwfence_ops);
 	if (rc)
 		dprintk(SYNX_DBG, "hwfence is not supported through synx api, err=%d\n", rc);
@@ -3517,6 +3547,7 @@ static int __init synx_init(void)
 	synx_shared_ops.get_fence = synx_internal_get_dma_fence;
 	synx_shared_ops.notify_recover = synx_internal_notify_recover;
 	synx_shared_ops.signal_fence = synx_internal_signal_fence;
+	synx_shared_ops.dma_add_cb_no_enable_sig = dma_fence_add_callback;
 	rc  = synx_hwfence_init_interops(&synx_shared_ops, &hwfence_shared_ops);
 	if (rc) {
 		dprintk(SYNX_ERR, "Hw fence inter-op mapping failed, err %d\n", rc);

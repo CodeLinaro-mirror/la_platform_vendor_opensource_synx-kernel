@@ -7,10 +7,6 @@ else
 TARGET_SYNX_ENABLE := true
 endif
 
-ifeq ($(TARGET_BOARD_PLATFORM), gen5)
-TARGET_SYNX_ENABLE := false
-endif
-
 ifeq ($(TARGET_SYNX_ENABLE),true)
 SYNX_BLD_DIR := $(TOP)/vendor/qcom/opensource/synx-kernel
 
@@ -29,7 +25,11 @@ DLKM_DIR   := $(TOP)/device/qcom/common/dlkm
 
 LOCAL_PATH := $(call my-dir)
 LOCAL_MODULE_DDK_BUILD := true
+ifeq ($(TARGET_BOARD_PLATFORM), gen5)
+LOCAL_MODULE_KO_DIRS := msm/synx-driver.ko
+else
 LOCAL_MODULE_KO_DIRS := msm/synx/synx-driver.ko msm/synx/ipclite.ko msm/synx/test/ipclite_test.ko
+endif
 
 include $(CLEAR_VARS)
 # For incremental compilation
@@ -47,7 +47,11 @@ include $(CLEAR_VARS)
 LOCAL_SRC_FILES   := $(wildcard $(LOCAL_PATH)/**/*) $(wildcard $(LOCAL_PATH)/*)
 $(info LOCAL_SRC_FILES = $(LOCAL_SRC_FILES))
 LOCAL_MODULE      := synx-driver.ko
+ifeq ($(TARGET_BOARD_PLATFORM), gen5)
+LOCAL_MODULE_KBUILD_NAME := msm/synx-driver.ko
+else
 LOCAL_MODULE_KBUILD_NAME := msm/synx/synx-driver.ko
+endif
 LOCAL_MODULE_PATH := $(KERNEL_MODULES_OUT)
 ifeq ($(CONFIG_QTI_HW_FENCE),y)
 LOCAL_REQUIRED_MODULES    := hw-fence-module-symvers
@@ -55,7 +59,7 @@ LOCAL_ADDITIONAL_DEPENDENCIES := $(call intermediates-dir-for,DLKM,hw-fence-modu
 endif
 include $(DLKM_DIR)/Build_external_kernelmodule.mk
 
-
+ifneq ($(TARGET_BOARD_PLATFORM), gen5)
 include $(CLEAR_VARS)
 # For incremental compilation
 LOCAL_SRC_FILES   := $(wildcard $(LOCAL_PATH)/**/*) $(wildcard $(LOCAL_PATH)/*)
@@ -74,14 +78,14 @@ LOCAL_MODULE      := ipclite_test.ko
 LOCAL_MODULE_KBUILD_NAME := msm/synx/test/ipclite_test.ko
 LOCAL_MODULE_PATH := $(KERNEL_MODULES_OUT)
 #BOARD_VENDOR_KERNEL_MODULES += $(LOCAL_MODULE_PATH)/$(LOCAL_MODULE)
-
+include $(DLKM_DIR)/Build_external_kernelmodule.mk
+endif
 # print out variables
 #$(info KBUILD_OPTIONS = $(KBUILD_OPTIONS))
 $(info LOCAL_ADDITIONAL_DEPENDENCY = $(LOCAL_ADDITIONAL_DEPENDENCY))
 $(info LOCAL_ADDITIONAL_DEPENDENCIES = $(LOCAL_ADDITIONAL_DEPENDENCIES))
 $(info LOCAL_REQUIRED_MODULES = $(LOCAL_REQUIRED_MODULES))
 $(info DLKM_DIR = $(DLKM_DIR))
-include $(DLKM_DIR)/Build_external_kernelmodule.mk
 
 
 endif # End of check for TARGET_SYNX_ENABLE

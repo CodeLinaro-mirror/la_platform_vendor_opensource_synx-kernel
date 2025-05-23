@@ -40,6 +40,7 @@ enum ipclite_feature_mask {
 struct global_region_info {
 	void *virt_base;
 	uint32_t size;
+	uint32_t custom_value;
 };
 
 typedef int (*IPCLite_Client)(uint32_t proc_id,  int64_t data,  void *priv);

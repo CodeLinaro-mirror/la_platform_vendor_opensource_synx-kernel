@@ -1557,6 +1557,7 @@ static void synx_client_cleanup(struct work_struct *dispatch)
 
 	dprintk(SYNX_VERB, "session %llu [%s] destroyed %pK\n",
 		client->id, client->name, client);
+	client->session.ops = NULL;
 	vfree(client);
 }
 
