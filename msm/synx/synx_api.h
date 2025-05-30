@@ -401,10 +401,13 @@ struct synx_merge_params {
  *
  * SYNX_IMPORT_INDV_PARAMS : Import filled with synx_import_indv_params struct
  * SYNX_IMPORT_ARR_PARAMS  : Import filled with synx_import_arr_params struct
+ * SYNX_IMPORT_INDV_PARAMS_V2 : Import filled with synx_import_indv_params_v2 struct
+ *                              (NOT SUPPORTED)
  */
 enum synx_import_type {
 	SYNX_IMPORT_INDV_PARAMS = 0x01,
 	SYNX_IMPORT_ARR_PARAMS  = 0x02,
+	SYNX_IMPORT_INDV_PARAMS_V2 = 0x03,
 };
 
 /**
@@ -422,6 +425,26 @@ struct synx_import_indv_params {
 	u32 *new_h_synx;
 	enum synx_import_flags flags;
 	void *fence;
+};
+
+/**
+ * struct synx_import_indv_params_v2 - Synx import indv parameters
+ *
+ * @new_h_synx : Pointer to new synx object
+ *                (filled by the function)
+ *                The new handle/s should be used by importing
+ *                process for all synx api operations and
+ *                for sharing with FW cores.
+ * @flags       : Synx import flags
+ * @fence       : Pointer to DMA fence fd or synx handle, NULL if creating fence
+ * @client_data : 64-bit client data propagated to waiting clients during signal,
+ *                only supported for fence creation
+ */
+struct synx_import_indv_params_v2 {
+	u32 *new_h_synx;
+	enum synx_import_flags flags;
+	void *fence;
+	u64 client_data;
 };
 
 /**
@@ -447,6 +470,7 @@ struct synx_import_params {
 	union {
 		struct synx_import_indv_params indv;
 		struct synx_import_arr_params  arr;
+		struct synx_import_indv_params_v2 indv_v2;
 	};
 };
 
@@ -494,7 +518,7 @@ enum synx_signal_type {
  * @flags       : Synx signal flags, see enum synx_signal_flags for detail
  * @status      : Status of signaling, see enum synx_signal_status for supported statuses, provide
  *                value greater than SYNX_STATE_SIGNALED_MAX for custom notification
- * @client_data : reserved field for future use
+ * @client_data : 64-bit client data propagated to waiting clients
  * @signal_idx  : pointer to tx queue write index (filled by the function
  *                if SYNX_SIGNAL_DELAY is set in flags); supported for
  *                SYNX_HW_FENCE clients only, not by other clients
@@ -551,7 +575,7 @@ enum synx_read_type {
  * @status      : optional pointer to signal status (filled in by the function if present), see
  *                enum synx_signal_status for supported statuses; if status is greater than
  *                SYNX_STATE_SIGNALED_MAX, then signaling client provided custom notification status
- * @client_data : reserved field for future use
+ * @client_data : optional pointer to 64-bit client_data (filled in by the function if present)
  * @timeout_ms  : timeout for object read in ms. 0 for non-blocking read,
  *                SYNX_NO_TIMEOUT if no timeout.
  */
@@ -588,6 +612,37 @@ struct synx_read_n_params {
 	};
 };
 
+/**
+ * enum synx_get_type - Synx get params type
+ *
+ * SYNX_GET_STATUS_PARAMS : Get synx signaling status
+ * SYNX_GET_FENCE_PARAMS  : Get native fence associated with synx object
+ * SYNX_GET_CLIENT_DATA   : Get 64-bit client metadata associated with synx object
+ */
+enum synx_get_type {
+	SYNX_GET_STATUS_PARAMS = 0x01,
+	SYNX_GET_FENCE_PARAMS = 0x02,
+	SYNX_GET_CLIENT_DATA = 0x03,
+};
+
+/**
+ * struct synx_get_params - Synx get parameters
+ *
+ * @type        : Get params type filled by client
+ * @h_synx      : handle of synx object filled by client
+ * @status      : signaling status of synx object, filled by function call
+ * @fence       : native fence associated with synx object, filled by function call
+ * @client_data : 64-bit client metadata associated with synx object, filled by function call
+ */
+struct synx_get_params {
+	enum synx_get_type type;
+	u32 h_synx;
+	union {
+		enum synx_signal_status status;
+		void *fence;
+		u64 client_data;
+	};
+};
 
 /**
  * struct synx_ops - Synx operations
@@ -605,6 +660,7 @@ struct synx_read_n_params {
  * @import              : imports (looks up) synx object from given handle/fence
  * @get_fence           : gets native fence backing synx object
  * @release             : releases synx object
+ * @get                 : gets information associated with synx object
  */
 struct synx_ops {
 	int (*uninitialize)(struct synx_session *session);
@@ -620,6 +676,7 @@ struct synx_ops {
 	int (*import)(struct synx_session *session, struct synx_import_params *params);
 	void *(*get_fence)(struct synx_session *session, u32 h_synx);
 	int (*release)(struct synx_session *session, u32 h_synx);
+	int (*get)(struct synx_session *session, struct synx_get_params *params);
 };
 
 /* Kernel APIs */
@@ -770,8 +827,8 @@ int synx_wait(struct synx_session *session, u32 h_synx, u64 timeout_ms);
 /*
  * synx_read_n - Reads n synx objects (NOT SUPPORTED)
  *
- * Function reads an individual handle and signaling status with timeout
- * specified by params.
+ * Function reads an individual handle, signaling status, and 64-bit client_data
+ * with timeout specified by params.
  *
  * @param session      : Session ptr (returned from synx_initialize)
  * @param params       : Pointer to read_n params
@@ -867,5 +924,15 @@ int synx_recover(enum synx_client_id id);
  * @return Status of operation. Negative in case of error. SYNX_SUCCESS otherwise.
  */
 int synx_enable_resources(enum synx_client_id id, enum synx_resource_type resource, bool enable);
+
+/*
+ * synx_get - Get relevant information on synx object (NOT SUPPORTED)
+ *
+ * @param session : Session ptr (returned from synx_initialize)
+ * @param params  : Pointer to get params
+ *
+ * @return Status of operation. Negative in case of error, SYNX_SUCCESS otherwise.
+ */
+int synx_get(struct synx_session *session, struct synx_get_params *params);
 
 #endif /* __SYNX_API_H__ */
