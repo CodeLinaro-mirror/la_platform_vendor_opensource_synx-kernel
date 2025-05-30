@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2019, 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef __SYNX_API_H__
@@ -111,6 +111,18 @@ enum synx_signal_status {
 	SYNX_STATE_SIGNALED_SUCCESS = 2,
 	SYNX_STATE_SIGNALED_CANCEL  = 4,
 	SYNX_STATE_SIGNALED_MAX     = 64,
+};
+
+/**
+ * enum synx_signal_flags - Signal flags
+ *
+ * SYNX_SIGNAL_IMMEDIATE : Signal synx object immediately in function call (default behavior)
+ * SYNX_SIGNAL_DELAYED : Delay signal of synx object until client updates tx_ptr and sends IPCC;
+ *                       supported only for SYNX_HW_FENCE clients, not for other clients
+ */
+enum synx_signal_flags {
+	SYNX_SIGNAL_IMMEDIATE = 0,
+	SYNX_SIGNAL_DELAYED = 1,
 };
 
 /**
@@ -396,7 +408,7 @@ enum synx_import_type {
 };
 
 /**
- * struct synx_import_indv_params - Synx import indv parameters
+ * struct synx_import_indv_params - Synx import indv V2 parameters
  *
  * @new_h_synxs : Pointer to new synx object
  *                (filled by the function)
@@ -465,6 +477,119 @@ enum synx_resource_type {
 };
 
 /**
+ * enum synx_signal_type - Signal params type
+ *
+ * SYNX_SIGNAL_INDV_PARAMS : Signal filled with synx_signal_indv_params struct
+ * SYNX_SIGNAL_ARR_PARAMS  : Signal filled with synx_signal_arr_params struct
+ */
+enum synx_signal_type {
+	SYNX_SIGNAL_INDV_PARAMS = 0x01,
+	SYNX_SIGNAL_ARR_PARAMS  = 0x02,
+};
+
+/**
+ * struct synx_signal_indv_params - Synx signal indv parameters
+ *
+ * @h_synx      : Synx object handle
+ * @flags       : Synx signal flags, see enum synx_signal_flags for detail
+ * @status      : Status of signaling, see enum synx_signal_status for supported statuses, provide
+ *                value greater than SYNX_STATE_SIGNALED_MAX for custom notification
+ * @client_data : reserved field for future use
+ * @signal_idx  : pointer to tx queue write index (filled by the function
+ *                if SYNX_SIGNAL_DELAY is set in flags); supported for
+ *                SYNX_HW_FENCE clients only, not by other clients
+ */
+struct synx_signal_indv_params {
+	u32 h_synx;
+	enum synx_signal_flags flags;
+	u32 status;
+	u64 client_data;
+	u32 *signal_idx;
+};
+
+/**
+ * struct synx_signal_arr_params - Synx signal arr parameters
+ *
+ * @list        : List of synx_signal_indv_params
+ * @num_fences  : Number of fences or synx handles to be signaled
+ */
+struct synx_signal_arr_params {
+	struct synx_signal_indv_params *list;
+	u32 num_fences;
+};
+
+/**
+ * struct synx_signal_n_params - Synx signal_n parameters
+ *
+ * @type : Signal params type filled by client
+ * @indv : Params to signal an individual handle
+ * @arr  : Params to signal an array of handles
+ */
+struct synx_signal_n_params {
+	enum synx_signal_type type;
+	union {
+		struct synx_signal_indv_params indv;
+		struct synx_signal_arr_params  arr;
+	};
+};
+
+/**
+ * enum synx_read_type - Read params type
+ *
+ * SYNX_READ_INDV_PARAMS : Read filled with synx_read_indv_params struct
+ * SYNX_READ_ARR_PARAMS  : Read filled with synx_read_arr_params struct
+ */
+enum synx_read_type {
+	SYNX_READ_INDV_PARAMS = 0x01,
+	SYNX_READ_ARR_PARAMS  = 0x02,
+};
+
+/**
+ * struct synx_read_indv_params - Synx read indv parameters
+ *
+ * @h_synx      : pointer to synx object handle (filled in by the function)
+ * @status      : optional pointer to signal status (filled in by the function if present), see
+ *                enum synx_signal_status for supported statuses; if status is greater than
+ *                SYNX_STATE_SIGNALED_MAX, then signaling client provided custom notification status
+ * @client_data : reserved field for future use
+ * @timeout_ms  : timeout for object read in ms. 0 for non-blocking read,
+ *                SYNX_NO_TIMEOUT if no timeout.
+ */
+struct synx_read_indv_params {
+	u32 *h_synx;
+	u32 *status;
+	u64 *client_data;
+	u64 timeout_ms;
+};
+
+/**
+ * struct synx_read_arr_params - Synx read arr parameters
+ *
+ * @list        : List of synx_read_indv_params
+ * @num_fences  : Number of fences or synx handles to be read
+ */
+struct synx_read_arr_params {
+	struct synx_read_indv_params *list;
+	u32 num_fences;
+};
+
+/**
+ * struct synx_read_n_params - Synx read_n parameters
+ *
+ * @type : Read params type filled by client
+ * @indv : Params to read an individual handle
+ * @arr  : Params to read an array of handles
+ */
+struct synx_read_n_params {
+	enum synx_read_type type;
+	union {
+		struct synx_read_indv_params indv;
+		struct synx_read_arr_params  arr;
+	};
+};
+
+
+/**
  * struct synx_ops - Synx operations
  *
  * @uninitialize        : destroys the client session
@@ -487,12 +612,10 @@ struct synx_ops {
 	int (*async_wait)(struct synx_session *session, struct synx_callback_params *params);
 	int (*cancel_async_wait)(struct synx_session *session, struct synx_callback_params *params);
 	int (*signal)(struct synx_session *session, u32 h_synx, enum synx_signal_status status);
-	int (*signal_n)(struct synx_session *session, u32 *h_synx, u32 h_synx_count,
-			enum synx_signal_status *status, int *h_synx_error);
+	int (*signal_n)(struct synx_session *session, struct synx_signal_n_params *params);
 	int (*merge)(struct synx_session *session, struct synx_merge_params *params);
 	int (*wait)(struct synx_session *session, u32 h_synx, u64 timeout_ms);
-	int (*read_n)(struct synx_session *session, u32 *h_synx, u32 h_synx_count,
-			enum synx_signal_status *status, int *h_synx_error, u64 timeout_ms);
+	int (*read_n)(struct synx_session *session, struct synx_read_n_params *params);
 	int (*get_status)(struct synx_session *session, u32 h_synx);
 	int (*import)(struct synx_session *session, struct synx_import_params *params);
 	void *(*get_fence)(struct synx_session *session, u32 h_synx);
@@ -605,32 +728,16 @@ int synx_signal(struct synx_session *session, u32 h_synx,
 	enum synx_signal_status status);
 
 /*
- * synx_signal_n – Signals n synx objects
+ * synx_signal_n – Signals n synx objects (NOT SUPPORTED)
  *
- * Function signals 'h_synx_count' number of synx objects identified by
- * 'h_synx' array parameter. The 'status' array parameter corresponding to
- * 'h_synx' array indicates if the entity performing the signaling wants to
- * convey an error or a success case. 'h_synx_error' array holds per-synx-
- * object error status of signal operation and has -SYNX_ENODATA if the
- * signal operation was not attempted.
+ * Function signals an individual handle or N handles
  *
  * @param session      : Session ptr (returned from synx_initialize)
- * @param h_synx       : Synx object handle array.
- * @param h_synx_count : Number "n" of synx objects to signal in h_synx
- *                            array.
- * @param status       : Status-of-signaling array for h_synx array.
- *                            - Use NULL if not used.
- * @param h_synx_error : Synx object signal error states for h_synx array.
- *                            - Use NULL if per-synx-object status of operation
- *                              is not needed.
- *                            - A count of error states other than -SYNX_ENODATA
- *                              gives the number of synx objects on which
- *                              signal was attempted.
+ * @param params       : Pointer to signal params
  *
  * @return Status of operation. Negative in case of error. SYNX_SUCCESS otherwise.
  */
-int synx_signal_n(struct synx_session *session, u32 *h_synx, u32 h_synx_count,
-	enum synx_signal_status *status, int *h_synx_error);
+int synx_signal_n(struct synx_session *session, struct synx_signal_n_params *params);
 
 /**
  * synx_merge - Merges multiple synx objects
@@ -661,36 +768,17 @@ int synx_merge(struct synx_session *session, struct synx_merge_params *params);
 int synx_wait(struct synx_session *session, u32 h_synx, u64 timeout_ms);
 
 /*
- * synx_read_n - Reads n synx objects
+ * synx_read_n - Reads n synx objects (NOT SUPPORTED)
  *
- * Function reads 'h_synx_count' number of synx objects identified by
- * 'h_synx' array parameter with a maximum per-read timeout of 'timeout_ms'
- * milliseconds. The 'status' array parameter corresponding to 'h_synx' array
- * returns statuses if handles were signaled. Status can be from pre-defined
- * states (enum synx_signal_status) or custom status sent by producer.
- * 'h_synx_error' array holds per-synx-object error status of read operation
- * and has -SYNX_ENODATA if the read operation was not attempted.
+ * Function reads an individual handle and signaling status with timeout
+ * specified by params.
  *
  * @param session      : Session ptr (returned from synx_initialize)
- * @param h_synx       : Synx object handle array to be read.
- * @param h_synx_count : Number "n" of synx objects to read in h_synx array.
- * @param status       : Signal status of handles in h_synx array.
- *                            - Use NULL if not used.
- * @param h_synx_error : Synx object read error states for h_synx array.
- *                            - Use NULL if per-synx-object status of operation
- *                              is not needed.
- *                            - A count of error states other than -SYNX_ENODATA
- *                              gives the number of synx objects on which read
- *                              was attempted.
- * @param timeout_ms   : Timeout for each object read in ms.
- *                            - Use timeout_ms = 0 for non-blocking read.
- *                            - Use timeout_ms = UINT64_MAX to block and read
- *                              without timeout.
+ * @param params       : Pointer to read_n params
  *
  * @return Status of operation. Negative in case of error. SYNX_SUCCESS otherwise.
  */
-int synx_read_n(struct synx_session *session, u32 *h_synx, u32 h_synx_count,
-	enum synx_signal_status *status, int *h_synx_error, u64 timeout_ms);
+int synx_read_n(struct synx_session *session, struct synx_read_n_params *params);
 
 /**
  * synx_get_status - Returns the status of the synx object.
