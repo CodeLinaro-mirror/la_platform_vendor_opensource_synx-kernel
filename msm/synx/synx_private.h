@@ -287,6 +287,8 @@ int synx_internal_signal(struct synx_session *session, u32 h_synx,
 
 int synx_internal_merge(struct synx_session *session, struct synx_merge_params *params);
 
+int synx_internal_merge_n(struct synx_session *session, struct synx_merge_n_params *params);
+
 int synx_internal_wait(struct synx_session *session, u32 h_synx, u64 timeout_ms);
 
 int synx_internal_get_status(struct synx_session *session, u32 h_synx);

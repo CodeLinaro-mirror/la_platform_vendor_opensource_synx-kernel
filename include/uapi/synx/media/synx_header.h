@@ -207,6 +207,49 @@ struct synx_merge_v2 {
 };
 
 /**
+ * struct synx_merge_indv_info - Merge information for synx objects
+ *
+ * @synx_objs :  Pointer to synx object array to merge
+ * @num_objs  :  Number of objects in the array
+ * @merged    :  Merged synx object
+ * @flags     :  Merge flags
+ * @reserved  :  Reserved
+ * @client_data_hi   : most significant 32 bits of the 64-bit client_data propagated
+ *                     to waiting client during signal.
+ * @client_data_lo   : least significant 32 bits of the 64-bit client_data propagated
+ *                     to waiting client during signal.
+ * @security_key_hi  : most significant 32 bits of the 64-bit security_key for authentication.
+ *                     If security_key is not required use SYNX_NO_SECURITY_KEY macro.
+ * @security_key_lo  : least significant 32 bits of the 64-bit security_key for authentication.
+ *                     If security_key is not required use SYNX_NO_SECURITY_KEY macro.
+ */
+struct synx_merge_indv_info {
+	__u64 synx_objs;
+	__u32 num_objs;
+	__u32 merged;
+	__u32 flags;
+	__u32 reserved;
+	__u32 client_data_hi;
+	__u32 client_data_lo;
+	__u32 security_key_hi;
+	__u32 security_key_lo;
+};
+
+/**
+ * struct synx_merge_n_info - Merge information for synx objects
+ * @type         : Merge params type
+ * @reserved     : Reserved
+ * @indv         : params to create a single merged handle
+ */
+struct synx_merge_n_info {
+	__u32 type;
+	__u32 reserved;
+	union {
+		struct synx_merge_indv_info indv;
+	};
+};
+
+/**
  * struct synx_wait - Sync object wait information
  *
  * @synx_obj   : Sync object to wait on
@@ -456,4 +499,5 @@ struct synx_recover_info {
 #define SYNX_INITIALIZE_V3                   17
 #define SYNX_IMPORT_V2                       18
 #define SYNX_IMPORT_ARR_V2                   19
+#define SYNX_MERGE_N                         20
 #endif /* __UAPI_SYNX_H__ */
