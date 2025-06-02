@@ -15,6 +15,7 @@
 #include <linux/of_irq.h>
 #include <asm/memory.h>
 #include <linux/sizes.h>
+#include <linux/suspend.h>
 
 #include <linux/hwspinlock.h>
 
@@ -1597,6 +1598,22 @@ static int ipclite_feature_setup(struct device_node *pn)
 }
 /* IPCLite Features setup related functions end */
 
+static int ipclite_init_signal_broadcast(void)
+{
+	int ret = 0;
+	struct ipclite_channel broadcast = ipclite->channel[IPCMEM_APPS];
+	struct mbox_chan *mbox_chan = broadcast.irq_info[IPCLITE_MEM_INIT_SIGNAL].mbox_chan;
+
+	if (ipclite->channel[IPCMEM_APPS].status == ACTIVE) {
+		ret = mbox_send_message(mbox_chan, NULL);
+		if (ret < 0)
+			return ret;
+
+		mbox_client_txdone(mbox_chan, 0);
+	}
+	return ret;
+}
+
 /* API Definition Start - Minor Version 0*/
 static int ipclite_init_v0(struct platform_device *pdev)
 {
@@ -1604,7 +1621,6 @@ static int ipclite_init_v0(struct platform_device *pdev)
 	struct ipcmem_region *mem;
 	struct device_node *cn;
 	struct device_node *pn = pdev->dev.of_node;
-	struct ipclite_channel broadcast;
 
 	/* Allocate memory for IPCLite */
 	ipclite = kzalloc(sizeof(*ipclite), GFP_KERNEL);
@@ -1668,14 +1684,10 @@ static int ipclite_init_v0(struct platform_device *pdev)
 	}
 
 	/* Broadcast init_done signal to all subsystems once mbox channels are set up */
-	if (ipclite->channel[IPCMEM_APPS].status == ACTIVE) {
-		broadcast = ipclite->channel[IPCMEM_APPS];
-		ret = mbox_send_message(broadcast.irq_info[IPCLITE_MEM_INIT_SIGNAL].mbox_chan, NULL);
-		if (ret < 0)
-			goto mem_release;
+	ret = ipclite_init_signal_broadcast();
 
-		mbox_client_txdone(broadcast.irq_info[IPCLITE_MEM_INIT_SIGNAL].mbox_chan, 0);
-	}
+	if (ret < 0)
+		goto mem_release;
 
 	/* Debug Setup */
 	ret = ipclite_debug_setup();
@@ -2068,8 +2080,6 @@ error:
 
 static int ipclite_driver_freeze(struct device *dev)
 {
-	IPCLITE_LOG(MED, "Entered ipclite hibernate\n");
-
 	if (unlikely(!ipclite)) {
 		pr_err("ipclite not initialized\n");
 		return -ENOMEM;
@@ -2077,13 +2087,14 @@ static int ipclite_driver_freeze(struct device *dev)
 
 	ipclite->ipcmem.init_status = false;
 	kfree(ipclite->ipcmem.partition);
+
+	IPCLITE_LOG(MED, "Entered ipclite hibernate successfully\n");
 	return 0;
 }
 
 static int ipclite_driver_restore(struct device *dev)
 {
-	int ret = 0;
-	struct ipclite_channel broadcast;
+	int ret = 0, res = 0;
 	struct platform_device *pdev = container_of(dev, struct platform_device, dev);
 	struct device_node *pn = pdev->dev.of_node;
 
@@ -2103,15 +2114,10 @@ static int ipclite_driver_restore(struct device *dev)
 	ipclite_update_channel_status();
 
 	/* Broadcast init_done signal to all subsystems once mbox channels are set up */
-	if (ipclite->channel[IPCMEM_APPS].status == ACTIVE) {
-		broadcast = ipclite->channel[IPCMEM_APPS];
-		ret = mbox_send_message(broadcast.irq_info[IPCLITE_MEM_INIT_SIGNAL].mbox_chan,
-								NULL);
-		if (ret < 0) {
-			IPCLITE_LOG(ERR, "Failed to broadcast ipclite mem init signal");
-			return ret;
-		}
-		mbox_client_txdone(broadcast.irq_info[IPCLITE_MEM_INIT_SIGNAL].mbox_chan, 0);
+	res = ipclite_init_signal_broadcast();
+	if (res < 0) {
+		IPCLITE_LOG(ERR, "Failed to broadcast ipclite mem init signal");
+		return res;
 	}
 
 	/* Update the Global Debug variable for FW cores */
@@ -2122,7 +2128,70 @@ static int ipclite_driver_restore(struct device *dev)
 	return ret;
 }
 
-static const struct dev_pm_ops ipclite_hibernate_pm_ops = {
+static int ipclite_driver_suspend(struct device *dev)
+{
+	if (pm_suspend_target_state == PM_SUSPEND_MEM) {
+		if (unlikely(!ipclite)) {
+			pr_err("ipclite not initialized\n");
+			return -ENOMEM;
+		}
+
+		ipclite->ipcmem.init_status = false;
+
+		IPCLITE_LOG(MED, "Entered ipclite deep sleep successfully\n");
+	} else {
+		IPCLITE_LOG(MED, "Entered ipclite suspend successfully\n");
+	}
+	return 0;
+}
+
+static int ipclite_driver_resume(struct device *dev)
+{
+	int ret = 0, res = 0;
+
+	if (pm_suspend_target_state == PM_SUSPEND_MEM) {
+		if (unlikely(!ipclite)) {
+			pr_err("ipclite not initialized\n");
+			return -ENOMEM;
+		}
+
+		for (int p = 0; p < ipclite->ipcmem.num_partitions; p++) {
+			ipclite_global_atomic_store_i32((ipclite_atomic_int32_t *)
+				(&(ipclite->ipcmem.partition[p]->hdr.status)), 0);
+		}
+
+		ipclite_update_channel_status();
+
+		for (int remote_pid = 0; remote_pid < IPCMEM_NUM_HOSTS; remote_pid++) {
+			if (!is_host_enabled(remote_pid))
+				continue;
+			*(ipclite->channel[remote_pid].tx_fifo->head) = 0;
+			*(ipclite->channel[remote_pid].rx_fifo->tail) = 0;
+		}
+
+		if (get_ipclite_feature(IPCLITE_GLOBAL_LOCK)) {
+			memset(ipclite->gl_lock_table->global_lock, 0,
+				IPCLITE_MAX_GLOBAL_LOCK * sizeof(uint32_t));
+		}
+
+		ipclite->ipcmem.init_status = true;
+
+		res = ipclite_init_signal_broadcast();
+		if (res < 0) {
+			IPCLITE_LOG(ERR, "Failed to broadcast ipclite mem init signal");
+			return res;
+		}
+
+		IPCLITE_LOG(MED, "Exited ipclite deep sleep successfully\n");
+	} else {
+		IPCLITE_LOG(MED, "Resumed from ipclite suspend successfully\n");
+	}
+	return ret;
+}
+
+static const struct dev_pm_ops ipclite_pm_ops = {
+	.suspend = ipclite_driver_suspend,
+	.resume = ipclite_driver_resume,
 	.freeze = ipclite_driver_freeze,
 	.restore = ipclite_driver_restore,
 };
@@ -2138,7 +2207,7 @@ static struct platform_driver ipclite_driver = {
 	.driver = {
 		.name = "ipclite",
 		.of_match_table = ipclite_of_match,
-		.pm = &ipclite_hibernate_pm_ops,
+		.pm = &ipclite_pm_ops,
 	},
 };
 
