@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2021-2023,2025, Qualcomm Innovation Center, Inc. All rights reserved..
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #include <linux/hwspinlock.h>
 #include <linux/module.h>
@@ -406,9 +406,13 @@ struct ipclite_info {
 #define GLOBAL_PARTITION_HDR_SIZE		(4*1024)
 
 #define GLOBAL_REGION_OFFSET			(4*1024)
-#define GLOBAL_REGION_SIZE				(124*1024)
-
+#if IS_ENABLED(CONFIG_EXTENSIBLE_GLCOREDATA)
+#define GLOBAL_REGION_SIZE			(252*1024)
+#define GLOBAL_PARTITION_SIZE			(256*1024)
+#else
+#define GLOBAL_REGION_SIZE			(124*1024)
 #define GLOBAL_PARTITION_SIZE			(128*1024)
+#endif
 #define GLOBAL_PARTITION_FLAGS			IPCMEM_FLAGS_ENABLE_RW_PROTECTION
 
 /*Debug partition parameters*/
