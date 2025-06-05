@@ -31,11 +31,26 @@ static struct ipclite_debug_struct *ipclite_dbg_struct;
 static struct ipclite_debug_inmem_buf *ipclite_dbg_inmem;
 static struct mutex ssr_mutex;
 static struct kobject *sysfs_kobj;
+static bool debug_status = false;
 
 static uint32_t ipclite_debug_level = IPCLITE_ERR | IPCLITE_WARN | IPCLITE_INFO;
 static uint32_t ipclite_debug_control = IPCLITE_OS_LOG, ipclite_debug_dump;
 static uint32_t enabled_hosts, major_ver, minor_ver;
 static uint64_t feature_mask;
+
+static inline int is_feature_config(uint32_t ipclite_feature)
+{
+	return feature_mask & ipclite_feature;
+}
+
+static inline int is_debug_config(uint32_t ipclite_debug)
+{
+	if (!debug_status) {
+		pr_err("debug setup not initialized.");
+		return 0;
+	}
+	return ipclite_debug_control & ipclite_debug;
+}
 
 static inline bool is_host_enabled(uint32_t host)
 {
@@ -51,6 +66,11 @@ static void ipclite_inmem_log(const char *psztStr, ...)
 {
 	uint32_t local_index = 0;
 	va_list pArgs;
+
+	if (!debug_status) {
+		pr_err("debug setup not initialized.");
+		return;
+	}
 
 	va_start(pArgs, psztStr);
 
@@ -70,14 +90,8 @@ static void ipclite_dump_debug_struct(void)
 	int i = 0, host = 0;
 	struct ipclite_debug_struct *temp_dbg_struct;
 
-	/* Check if debug structures are initialized */
-	if (!ipclite_dbg_info || !ipclite_dbg_struct) {
-		pr_err("Debug Structures not initialized\n");
-		return;
-	}
-
 	/* Check if debug structures are enabled before printing */
-	if (!(IS_DEBUG_CONFIG(IPCLITE_DBG_STRUCT))) {
+	if (!(is_debug_config(IPCLITE_DBG_STRUCT))) {
 		pr_err("Debug Structures not enabled\n");
 		return;
 	}
@@ -141,14 +155,8 @@ static void ipclite_dump_inmem_logs(void)
 	int i = 0;
 	uint32_t local_index = 0;
 
-	/* Check if debug and inmem structures are initialized */
-	if (!ipclite_dbg_info || !ipclite_dbg_inmem) {
-		pr_err("Debug structures not initialized\n");
-		return;
-	}
-
 	/* Check if debug structures are enabled before printing */
-	if (!(IS_DEBUG_CONFIG(IPCLITE_INMEM_LOG))) {
+	if (!(is_debug_config(IPCLITE_INMEM_LOG))) {
 		pr_err("In-Memory Logs not enabled\n");
 		return;
 	}
@@ -518,7 +526,7 @@ static void ipcmem_rx_advance(struct ipclite_fifo *rx_fifo,
 	*rx_fifo->tail = cpu_to_le32(tail);
 
 	/* Storing the debug data in debug structures */
-	if (IS_DEBUG_CONFIG(IPCLITE_DBG_STRUCT)) {
+	if (is_debug_config(IPCLITE_DBG_STRUCT)) {
 		ipclite_dbg_struct->dbg_info_host[core_id].prev_rx_wr_index[1] =
 				ipclite_dbg_struct->dbg_info_host[core_id].prev_rx_wr_index[0];
 		ipclite_dbg_struct->dbg_info_host[core_id].prev_rx_wr_index[0] =
@@ -603,7 +611,7 @@ static void ipcmem_tx_write(struct ipclite_fifo *tx_fifo,
 						*tx_fifo->head, core_id, signal_id);
 
 	/* Storing the debug data in debug structures */
-	if (IS_DEBUG_CONFIG(IPCLITE_DBG_STRUCT)) {
+	if (is_debug_config(IPCLITE_DBG_STRUCT)) {
 		ipclite_dbg_struct->dbg_info_host[core_id].prev_tx_wr_index[1] =
 				ipclite_dbg_struct->dbg_info_host[core_id].prev_tx_wr_index[0];
 		ipclite_dbg_struct->dbg_info_host[core_id].prev_tx_wr_index[0] =
@@ -739,7 +747,7 @@ static irqreturn_t ipclite_intr(int irq, void *data)
 							channel->remote_pid, irq_info->signal_id);
 
 	/* Storing the debug data in debug structures */
-	if (IS_DEBUG_CONFIG(IPCLITE_DBG_STRUCT)) {
+	if (is_debug_config(IPCLITE_DBG_STRUCT)) {
 		ipclite_dbg_struct->dbg_info_host[channel->remote_pid].num_intr++;
 		ipclite_dbg_struct->dbg_info_overall.last_recv_host_id = channel->remote_pid;
 		ipclite_dbg_struct->dbg_info_overall.last_sigid_recv = irq_info->signal_id;
@@ -1364,8 +1372,8 @@ static ssize_t ipclite_dbg_lvl_write(struct kobject *kobj,
 	}
 
 	/* Check if debug structure is initialized */
-	if (!ipclite_dbg_info) {
-		IPCLITE_LOG(ERR, "Debug structures not initialized\n");
+	if (!debug_status) {
+		pr_err("debug setup not initialized.");
 		return -ENOMEM;
 	}
 
@@ -1402,8 +1410,8 @@ static ssize_t ipclite_dbg_ctrl_write(struct kobject *kobj,
 	}
 
 	/* Check if debug structures are initialized */
-	if (!ipclite_dbg_info || !ipclite_dbg_struct || !ipclite_dbg_inmem) {
-		IPCLITE_LOG(ERR, "Debug structures not initialized\n");
+	if (!debug_status) {
+		pr_err("debug setup not initialized.");
 		return -ENOMEM;
 	}
 
@@ -1440,8 +1448,8 @@ static ssize_t ipclite_dbg_dump_write(struct kobject *kobj,
 	}
 
 	/* Check if debug structures are initialized */
-	if (!ipclite_dbg_info || !ipclite_dbg_struct || !ipclite_dbg_inmem) {
-		IPCLITE_LOG(ERR, "Debug structures not initialized\n");
+	if (!debug_status) {
+		pr_err("debug setup not initialized.");
 		return -ENOMEM;
 	}
 
@@ -1515,6 +1523,7 @@ static int ipclite_debug_mem_setup(void)
 
 	if (!ipclite_dbg_inmem)
 		return -EADDRNOTAVAIL;
+	debug_status = true;
 
 	IPCLITE_LOG(LOW, "virtual_base_ptr = %p total_size : %d debug_size : %d\n",
 		ipclite->ipcmem.mem.virt_base, ipclite->ipcmem.mem.size, DEBUG_PARTITION_SIZE);
@@ -1573,15 +1582,15 @@ static int ipclite_feature_setup(struct device_node *pn)
 	feature_mask = (uint64_t) feature_mask_h << 32 | feature_mask_l;
 
 	/* Set up Global Atomics Feature*/
-	if (!(IS_FEATURE_CONFIG(IPCLITE_GLOBAL_ATOMIC)))
+	if (!(is_feature_config(IPCLITE_GLOBAL_ATOMIC)))
 		IPCLITE_LOG(INFO, "IPCLite Global Atomic Support Disabled\n");
 
 	/* Set up Test Suite Feature*/
-	if (!(IS_FEATURE_CONFIG(IPCLITE_TEST_SUITE)))
+	if (!(is_feature_config(IPCLITE_TEST_SUITE)))
 		IPCLITE_LOG(INFO, "IPCLite Test Suite Disabled\n");
 
 	/* Set up ipclite atomic Feature*/
-	if (!(IS_FEATURE_CONFIG(IPCLITE_GLOBAL_LOCK)))
+	if (!(is_feature_config(IPCLITE_GLOBAL_LOCK)))
 		IPCLITE_LOG(INFO, "IPCLite Atomic Support Disabled\n");
 
 	return ret;

@@ -69,17 +69,11 @@
 		} \
 	} while (0)
 
-/* IPCLite Debug enable status */
-#define IS_DEBUG_CONFIG(ipclite_debug) (ipclite_debug_control & ipclite_debug)
-
-/* IPCLite Feature enable status */
-#define IS_FEATURE_CONFIG(ipclite_feature) (feature_mask & ipclite_feature)
-
 /* Global Atomic status */
 #define ATOMIC_HW_MUTEX_ACQUIRE \
-(IS_FEATURE_CONFIG(IPCLITE_GLOBAL_ATOMIC) ?: ipclite_hw_mutex_acquire())
+(is_feature_config(IPCLITE_GLOBAL_ATOMIC) ?: ipclite_hw_mutex_acquire())
 #define ATOMIC_HW_MUTEX_RELEASE \
-(IS_FEATURE_CONFIG(IPCLITE_GLOBAL_ATOMIC) ?: ipclite_hw_mutex_release())
+(is_feature_config(IPCLITE_GLOBAL_ATOMIC) ?: ipclite_hw_mutex_release())
 
 /* API Structure */
 struct ipclite_api_list {
