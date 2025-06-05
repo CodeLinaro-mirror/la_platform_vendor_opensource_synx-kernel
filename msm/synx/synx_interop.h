@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef __SYNX_INTEROP_API_H__
@@ -8,6 +8,7 @@
 
 #include "synx_api.h"
 #include "synx_global.h"
+#include <linux/dma-fence.h>
 
 /**
  * SYNX_NATIVE_FENCE_FLAG_ENABLED_BIT - synx-native fence is enabled for the dma_fence
@@ -31,6 +32,7 @@
  * @get_fence: gets native fence backing handle of other driver
  * @notify_recover: performs recovery for given synx core
  * @signal_fence: signal h_synx from hlos on behalf of given synx core
+ * @dma_add_cb_no_enable_sig: adds callback without calling enable_signaling
  */
 struct synx_hwfence_interops {
 	int (*share_handle_status)(struct synx_import_indv_params *params, u32 h_caller,
@@ -39,6 +41,8 @@ struct synx_hwfence_interops {
 	int (*notify_recover)(enum synx_core_id id);
 	int (*signal_fence)(enum synx_core_id id, bool is_core_ssr, u32 h_synx,
 		enum synx_signal_status status);
+	int (*dma_add_cb_no_enable_sig)(struct dma_fence *fence,
+		struct dma_fence_cb *cb, dma_fence_func_t func);
 };
 
 #if IS_ENABLED(CONFIG_QTI_HW_FENCE)

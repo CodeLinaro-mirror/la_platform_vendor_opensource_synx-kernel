@@ -16,6 +16,8 @@
 #include <linux/uaccess.h>
 #include <linux/vmalloc.h>
 #include <linux/version.h>
+#include <linux/suspend.h>
+#include <linux/notifier.h>
 
 #include "synx_debugfs.h"
 #include "synx_private.h"
@@ -3091,6 +3093,9 @@ struct synx_session *synx_internal_initialize(
 		params->id >= SYNX_CLIENT_END)
 		return ERR_PTR(-SYNX_NOSUPPORT);
 
+	if (!synx_dev)
+		return ERR_PTR(-SYNX_INVALID);
+
 	client = vzalloc(sizeof(*client));
 	if (IS_ERR_OR_NULL(client)) {
 		dprintk(SYNX_ERR, "client allocation failed\n");
@@ -3110,9 +3115,6 @@ struct synx_session *synx_internal_initialize(
 	init_waitqueue_head(&client->event_wq);
 	/* zero idx not allowed */
 	set_bit(0, client->cb_bitmap);
-
-	if (!synx_dev)
-		return ERR_PTR(-SYNX_INVALID);
 
 	spin_lock_bh(&synx_dev->native->metadata_map_lock);
 	hash_add(synx_dev->native->client_metadata_map,
@@ -3458,6 +3460,69 @@ static int synx_internal_init_ops(struct synx_ops *synx_ops)
 	return SYNX_SUCCESS;
 }
 
+static int synx_hibernate_entry(void)
+{
+	int rc = SYNX_SUCCESS;
+
+	rc = synx_global_memory_is_empty();
+	if (rc) {
+		dprintk(SYNX_ERR, "Global memory is not empty\n");
+		return -SYNX_EAGAIN;
+	}
+
+	rc = synx_util_local_map_is_empty(synx_dev->native->bitmap,
+		SYNX_MAX_OBJS);
+	if (rc) {
+		dprintk(SYNX_ERR, "Local memory is not empty\n");
+		return -SYNX_EAGAIN;
+	}
+
+	rc = synx_global_free_synx_hwlock();
+	if (rc) {
+		dprintk(SYNX_ERR, "Failed to release synx_hwlock\n");
+		return -SYNX_EAGAIN;
+	}
+
+	dprintk(SYNX_DBG, "Synx hibernate entry successful\n");
+
+	return rc;
+}
+
+static int synx_hibernate_exit(void)
+{
+	int rc = SYNX_SUCCESS;
+
+	rc = synx_global_mem_init();
+	if (rc) {
+		dprintk(SYNX_ERR, "shared mem init failed, err=%d\n", rc);
+		return -SYNX_EAGAIN;
+	}
+
+	dprintk(SYNX_DBG, "Synx hibernate exit successful\n");
+
+	return rc;
+}
+
+static int qcom_synx_hibernation_notifier(struct notifier_block *nb,
+				unsigned long event, void *dummy)
+{
+	int rc = SYNX_SUCCESS;
+
+	if (event == PM_HIBERNATION_PREPARE)
+		rc = synx_hibernate_entry();
+	else if (event == PM_POST_HIBERNATION)
+		rc = synx_hibernate_exit();
+
+	if (rc)
+		return NOTIFY_BAD;
+
+	return NOTIFY_OK;
+}
+
+static struct notifier_block qcom_synx_notif_block = {
+	.notifier_call = qcom_synx_hibernation_notifier,
+};
+
 static int __init synx_init(void)
 {
 	int rc;
@@ -3547,6 +3612,7 @@ static int __init synx_init(void)
 	synx_shared_ops.get_fence = synx_internal_get_dma_fence;
 	synx_shared_ops.notify_recover = synx_internal_notify_recover;
 	synx_shared_ops.signal_fence = synx_internal_signal_fence;
+	synx_shared_ops.dma_add_cb_no_enable_sig = dma_fence_add_callback;
 	rc  = synx_hwfence_init_interops(&synx_shared_ops, &hwfence_shared_ops);
 	if (rc) {
 		dprintk(SYNX_ERR, "Hw fence inter-op mapping failed, err %d\n", rc);
@@ -3554,6 +3620,12 @@ static int __init synx_init(void)
 
 	ipclite_register_client(synx_ipc_callback, NULL);
 	synx_local_mem_init();
+
+	rc = register_pm_notifier(&qcom_synx_notif_block);
+	if (rc) {
+		dprintk(SYNX_ERR, "SYNX hibernate registration failed, err %d\n", rc);
+		goto err;
+	}
 
 	dprintk(SYNX_INFO, "device initialization success\n");
 

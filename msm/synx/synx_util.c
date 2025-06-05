@@ -434,6 +434,28 @@ void synx_util_object_destroy(struct synx_coredata *synx_obj)
 	dprintk(SYNX_MEM, "released synx object %pK\n", synx_obj);
 }
 
+int synx_util_local_map_is_empty(unsigned long *bitmap, unsigned int size)
+{
+	u32 index = 0;
+
+	if (!bitmap)
+		return -SYNX_NOMEM;
+
+	index = find_next_bit((unsigned long *)bitmap,
+			size, index);
+
+	if (index >= size)
+		return SYNX_SUCCESS;
+
+	while (index < size) {
+		dprintk(SYNX_MEM, "local index being used %d\n", index);
+		index = find_next_bit((unsigned long *)(bitmap),
+				size, index + 1);
+	}
+
+	return -SYNX_INVALID;
+}
+
 long synx_util_get_free_handle(unsigned long *bitmap, unsigned int size)
 {
 	bool bit;
@@ -1052,7 +1074,10 @@ static void synx_util_cleanup_fence(
 		if (g_status > SYNX_STATE_ACTIVE) {
 			dprintk(SYNX_DBG, "signaling fence %pK with status %u\n",
 				synx_obj->fence, g_status);
-			synx_native_signal_fence(synx_obj, g_status);
+			if (synx_util_is_merged_object(synx_obj))
+				synx_native_signal_merged_fence(synx_obj, g_status);
+			else
+				synx_native_signal_fence(synx_obj, g_status);
 		} else {
 			spin_lock_irqsave(synx_obj->fence->lock, flags);
 			if (synx_util_get_object_status_locked(synx_obj) ==
@@ -1557,6 +1582,7 @@ static void synx_client_cleanup(struct work_struct *dispatch)
 
 	dprintk(SYNX_VERB, "session %llu [%s] destroyed %pK\n",
 		client->id, client->name, client);
+	client->session.ops = NULL;
 	vfree(client);
 }
 

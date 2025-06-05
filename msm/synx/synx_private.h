@@ -185,7 +185,7 @@ struct synx_handle_coredata {
 };
 
 struct synx_client {
-	u32 type;
+	struct synx_session session;
 	bool active;
 	struct synx_device *device;
 	char name[SYNX_OBJ_NAME_LEN];

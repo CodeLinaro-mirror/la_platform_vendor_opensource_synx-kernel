@@ -185,6 +185,20 @@ static int synx_gmem_init(void)
 	return SYNX_SUCCESS;
 }
 
+int synx_global_free_synx_hwlock(void)
+{
+
+	if (!get_ipclite_feature(IPCLITE_GLOBAL_LOCK)) {
+		if (!synx_hwlock) {
+			dprintk(SYNX_ERR, "hwspinlock is NULL\n");
+			return -SYNX_NOMEM;
+		}
+		hwspin_lock_free(synx_hwlock);
+	}
+
+	return SYNX_SUCCESS;
+}
+
 u32 synx_global_map_core_id(enum synx_core_id id)
 {
 	u32 host_id;
@@ -210,6 +224,32 @@ u32 synx_global_map_core_id(enum synx_core_id id)
 	}
 
 	return host_id;
+}
+
+int synx_global_memory_is_empty(void)
+{
+	u32 index = 0;
+	const u32 size = SYNX_GLOBAL_MAX_OBJS;
+	struct synx_global_coredata *synx_g_obj;
+
+	if (!synx_gmem.table)
+		return -SYNX_NOMEM;
+
+	index = find_next_bit((unsigned long *)synx_gmem.bitmap,
+			size, index + 1);
+
+	if (index >= size)
+		return SYNX_SUCCESS;
+
+	while (index < size) {
+		dprintk(SYNX_MEM, "global index being used %d\n", index);
+		synx_g_obj = &synx_gmem.table[index];
+		synx_global_print_data(synx_g_obj, __func__);
+		index = find_next_bit((unsigned long *)(synx_gmem.bitmap),
+				size, index + 1);
+	}
+
+	return -SYNX_INVALID;
 }
 
 int synx_global_alloc_index(u32 *idx)
