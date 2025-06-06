@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2021-2025, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #define pr_fmt(fmt) "%s:%s: " fmt, KBUILD_MODNAME, __func__
 
@@ -162,16 +162,19 @@ static void ipclite_dump_inmem_logs(void)
 
 	/* Printing from current index till the end of buffer */
 	for (i = local_index % IPCLITE_LOG_BUF_SIZE; i < IPCLITE_LOG_BUF_SIZE; i++) {
-		if (ipclite_dbg_inmem->IPCLITELog[i][0])
+		if (ipclite_dbg_inmem->IPCLITELog[i][0]) {
 			pr_info("%s\n", ipclite_dbg_inmem->IPCLITELog[i]);
+			memset(ipclite_dbg_inmem->IPCLITELog[i], 0, IPCLITE_LOG_MSG_SIZE);
+		}
 	}
 
 	/* Printing from 0th index to current-1 index */
 	for (i = 0; i < local_index % IPCLITE_LOG_BUF_SIZE; i++) {
-		if (ipclite_dbg_inmem->IPCLITELog[i][0])
+		if (ipclite_dbg_inmem->IPCLITELog[i][0]) {
 			pr_info("%s\n", ipclite_dbg_inmem->IPCLITELog[i]);
+			memset(ipclite_dbg_inmem->IPCLITELog[i], 0, IPCLITE_LOG_MSG_SIZE);
+		}
 	}
-
 	return;
 }
 
