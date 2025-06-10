@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/hwspinlock.h>
@@ -676,6 +676,79 @@ u32 synx_global_test_status_set_wait(u32 idx,
 	}
 	else
 		dprintk(SYNX_DBG, "handle %u already signaled %u",
+			synx_g_obj->handle, synx_g_obj->status);
+	synx_gmem_unlock(idx, &flags);
+
+	return status;
+}
+
+int synx_global_test_status_set_parent_child_wait(u32 idx,
+	enum synx_core_id id)
+{
+	int rc;
+	unsigned long flags;
+	u32 status;
+	struct synx_global_coredata *synx_g_obj;
+	u32 h_parents[SYNX_GLOBAL_MAX_PARENTS] = {0};
+	u32 i;
+	bool no_parent = true;
+
+	if (!synx_gmem.table) {
+		dprintk(SYNX_ERR, "synx_gmem is NULL\n");
+		return 0;
+	}
+
+	if (id >= SYNX_CORE_MAX || !synx_is_valid_idx(idx)) {
+		dprintk(SYNX_ERR, "invalid idx:%u\n", idx);
+		return 0;
+	}
+
+	rc = synx_gmem_lock(idx, &flags);
+	if (rc) {
+		dprintk(SYNX_ERR, "Failed to lock entry %u\n", idx);
+		return 0;
+	}
+	synx_g_obj = synx_fetch_global_coredata_object(idx);
+	synx_global_print_data(synx_g_obj, __func__);
+	status = synx_g_obj->status;
+	if (synx_g_obj->num_child != 0) {
+		dprintk(SYNX_ERR,
+			"composite handle cannot be directly marked as waiting client.");
+		synx_gmem_unlock(idx, &flags);
+		return -SYNX_INVALID;
+	}
+
+	if (status == SYNX_STATE_ACTIVE) {
+		/*
+		 * Currently if a handle has parent, then only on the parent is marked as waiter
+		 * to avoid multiple interrupts for each children. A client waiting on child will
+		 * get the signal only when parent gets signaled.
+		 */
+		synx_global_get_parents_locked(synx_g_obj, h_parents);
+
+		// check if there is any non-zero value in h_parents
+		for (i = 0; i < SYNX_GLOBAL_MAX_PARENTS; i++) {
+			if (h_parents[i] != 0) {
+				no_parent = false;
+				break;
+			}
+		}
+
+		if (no_parent) {
+			synx_g_obj->waiters |= (1UL << id);
+		} else {
+			synx_gmem_unlock(idx, &flags);
+			for (i = 0; i < SYNX_GLOBAL_MAX_PARENTS; i++) {
+				if (h_parents[i] != 0) {
+					dprintk(SYNX_DBG, "Setting waiter for parent idx %d\n",
+						h_parents[i]);
+					synx_global_set_waiting_core(h_parents[i], id);
+				}
+			}
+			return status;
+		}
+	} else
+		dprintk(SYNX_DBG, "handle %u already signaled %u\n",
 			synx_g_obj->handle, synx_g_obj->status);
 	synx_gmem_unlock(idx, &flags);
 

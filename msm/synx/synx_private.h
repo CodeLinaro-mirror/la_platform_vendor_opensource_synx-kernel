@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef __SYNX_PRIVATE_H__
@@ -109,6 +109,11 @@ struct synx_timer_cb_data {
 	struct synx_session *session;
 	struct synx_cb_data *synx_cb;
 	u32 h_synx;
+	struct work_struct cb_dispatch;
+};
+
+struct synx_fence_enable_data {
+	struct dma_fence *fence;
 	struct work_struct cb_dispatch;
 };
 

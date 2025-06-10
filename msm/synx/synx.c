@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/atomic.h>
@@ -61,8 +61,75 @@ void synx_external_callback(s32 sync_obj, int status, void *data)
 }
 EXPORT_SYMBOL(synx_external_callback);
 
+void synx_fence_enable_handler(struct work_struct *cb_dispatch)
+{
+	u32 h_synx, idx, status;
+	struct synx_fence_enable_data *synx_fence_enable_cb =
+		container_of(cb_dispatch, struct synx_fence_enable_data, cb_dispatch);
+	struct dma_fence *fence = synx_fence_enable_cb->fence;
+	struct synx_map_entry *entry;
+	struct synx_coredata *synx_obj;
+
+	if (dma_fence_is_array(fence)) {
+		dprintk(SYNX_ERR, "dma fence array is not expected\n");
+		return;
+	}
+
+	h_synx = synx_util_get_fence_entry((u64)fence, true);
+	dprintk(SYNX_DBG, "trying to mark core as waiter fence %pK h_synx %u\n",
+		fence, h_synx);
+
+	if (h_synx && synx_util_is_global_handle(h_synx)) {
+
+		entry = synx_util_get_map_entry(h_synx);
+		if (IS_ERR_OR_NULL(entry)) {
+			dprintk(SYNX_ERR, "Invalid map entry for h_synx %d\n", h_synx);
+			return;
+		}
+		synx_obj = entry->synx_obj;
+
+		idx = h_synx & SYNX_HANDLE_INDEX_MASK;
+		if (!synx_is_valid_idx(idx)) {
+			dprintk(SYNX_ERR, "invalid idx:%u\n", idx);
+			synx_util_release_map_entry(entry);
+			return;
+		}
+
+		mutex_lock(&synx_obj->obj_lock);
+
+		status = synx_global_test_status_set_parent_child_wait(
+			idx, SYNX_CORE_APSS);
+		if (status != SYNX_STATE_ACTIVE) {
+			/*
+			 * Signal native dma-fence if it is not already signaled.
+			 * This will be case if different core is signal synx handle and
+			 * client is waiting directly on dma-fence.
+			 */
+			synx_native_signal_fence(synx_obj, status);
+		}
+		mutex_unlock(&synx_obj->obj_lock);
+
+		synx_util_release_map_entry(entry);
+	}
+}
+
 bool synx_fence_enable_signaling(struct dma_fence *fence)
 {
+
+	struct synx_fence_enable_data *synx_fence_enable_cb;
+
+	synx_fence_enable_cb = kzalloc(sizeof(*synx_fence_enable_cb), GFP_ATOMIC);
+	if (IS_ERR_OR_NULL(synx_fence_enable_cb)) {
+		dprintk(SYNX_ERR, "Cannot allocate memory\n");
+		return true;
+	}
+	dprintk(SYNX_DBG, "dma enable signaling invoked for fence %pK", fence);
+
+	synx_fence_enable_cb->fence = fence;
+
+	INIT_WORK(&synx_fence_enable_cb->cb_dispatch, synx_fence_enable_handler);
+	queue_work(synx_dev->wq_cb, &synx_fence_enable_cb->cb_dispatch);
+
 	return true;
 }
 
@@ -535,6 +602,7 @@ int synx_native_signal_merged_fence(struct synx_coredata *synx_obj, u32 status)
 	rc = synx_get_child_coredata(synx_obj, &synx_child_obj, &num_fences);
 	if (rc != SYNX_SUCCESS)
 		return rc;
+
 	for(i = 0; i < num_fences; i++)
 	{
 		if (IS_ERR_OR_NULL(synx_child_obj[i]) || IS_ERR_OR_NULL(synx_child_obj[i]->fence)) {
@@ -1072,6 +1140,13 @@ int synx_internal_async_wait(struct synx_session *session,
 				synx_native_signal_fence(synx_obj, status);
 		}
 	}
+
+	/*
+	 * Invoke synx_util_activate to enable signaling on dma-fence. As there is no
+	 * explicit dma_add_callback in async_wait and since client is interested
+	 * to wait on this core, it should be ok to enable dma-fence sw signaling.
+	 */
+	synx_util_activate(synx_obj);
 
 	status = synx_util_get_object_status(synx_obj);
 
@@ -3671,7 +3746,7 @@ static int __init synx_init(void)
 	synx_shared_ops.get_fence = synx_internal_get_dma_fence;
 	synx_shared_ops.notify_recover = synx_internal_notify_recover;
 	synx_shared_ops.signal_fence = synx_internal_signal_fence;
-	synx_shared_ops.dma_add_cb_no_enable_sig = dma_fence_add_callback;
+	synx_shared_ops.dma_add_cb_no_enable_sig = synx_dma_add_cb_no_enable_sig;
 	rc  = synx_hwfence_init_interops(&synx_shared_ops, &hwfence_shared_ops);
 	if (rc) {
 		dprintk(SYNX_ERR, "Hw fence inter-op mapping failed, err %d\n", rc);
