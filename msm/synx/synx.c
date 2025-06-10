@@ -4086,26 +4086,44 @@ static int synx_internal_init_ops(struct synx_ops *synx_ops)
 	return SYNX_SUCCESS;
 }
 
-static int synx_hibernate_entry(void)
+static int synx_prepare_pm_ops(void)
 {
 	int rc = SYNX_SUCCESS;
 
 	rc = synx_global_memory_is_empty();
 	if (rc) {
-		dprintk(SYNX_ERR, "Global memory is not empty\n");
-		return -SYNX_EAGAIN;
+		dprintk(SYNX_ERR, "Global memory is not empty, err=%d\n", rc);
+		return rc;
 	}
 
 	rc = synx_util_local_map_is_empty(synx_dev->native->bitmap,
 		SYNX_MAX_OBJS);
 	if (rc) {
-		dprintk(SYNX_ERR, "Local memory is not empty\n");
-		return -SYNX_EAGAIN;
+		dprintk(SYNX_ERR, "Local memory is not empty, err=%d\n", rc);
+		return rc;
 	}
 
 	rc = synx_global_free_synx_hwlock();
 	if (rc) {
-		dprintk(SYNX_ERR, "Failed to release synx_hwlock\n");
+		dprintk(SYNX_ERR, "Failed to release synx_hwlock, err=%d\n", rc);
+		return rc;
+	}
+
+	return rc;
+}
+
+static int synx_hibernate_entry(void)
+{
+	int rc = SYNX_SUCCESS;
+
+	/*
+	 * During hibernate entry, no synx use case will be active and global memory
+	 * will be reset.
+	 */
+
+	rc = synx_prepare_pm_ops();
+	if (rc) {
+		dprintk(SYNX_ERR, "Failed to prepare for hibernate, err=%d\n", rc);
 		return -SYNX_EAGAIN;
 	}
 
@@ -4114,9 +4132,34 @@ static int synx_hibernate_entry(void)
 	return rc;
 }
 
+static int synx_deep_sleep_entry(void)
+{
+	int rc = SYNX_SUCCESS;
+
+	/*
+	 * During deep sleep entry, no synx use case will be active and global memory
+	 * will be intact, however we still need to free hw_mutex.
+	 */
+
+	rc = synx_prepare_pm_ops();
+	if (rc) {
+		dprintk(SYNX_ERR, "Failed to prepare for deep sleep, err=%d\n", rc);
+		return -SYNX_EAGAIN;
+	}
+
+	dprintk(SYNX_DBG, "Synx deep sleep entry successful\n");
+
+	return rc;
+}
+
 static int synx_hibernate_exit(void)
 {
 	int rc = SYNX_SUCCESS;
+
+	/*
+	 * During hibernate exit, we need to initialize global memory
+	 * and also acquire hw_mutex
+	 */
 
 	rc = synx_global_mem_init();
 	if (rc) {
@@ -4125,6 +4168,26 @@ static int synx_hibernate_exit(void)
 	}
 
 	dprintk(SYNX_DBG, "Synx hibernate exit successful\n");
+
+	return rc;
+}
+
+static int synx_deep_sleep_exit(void)
+{
+	int rc = SYNX_SUCCESS;
+
+	/*
+	 * During deep sleep exit global memory is intact,
+	 * however we need to acquire hw_mutex
+	 */
+
+	rc = synx_gmem_init();
+	if (rc) {
+		dprintk(SYNX_ERR, "global mem init failed, err=%d\n", rc);
+		return -SYNX_EAGAIN;
+	}
+
+	dprintk(SYNX_DBG, "Synx deep sleep exit successful\n");
 
 	return rc;
 }
@@ -4138,6 +4201,10 @@ static int qcom_synx_hibernation_notifier(struct notifier_block *nb,
 		rc = synx_hibernate_entry();
 	else if (event == PM_POST_HIBERNATION)
 		rc = synx_hibernate_exit();
+	else if (event == PM_SUSPEND_PREPARE && (pm_suspend_target_state == PM_SUSPEND_MEM))
+		rc = synx_deep_sleep_entry();
+	else if (event == PM_POST_SUSPEND && (pm_suspend_target_state == PM_SUSPEND_MEM))
+		rc = synx_deep_sleep_exit();
 
 	if (rc)
 		return NOTIFY_BAD;
@@ -4249,7 +4316,7 @@ static int __init synx_init(void)
 
 	rc = register_pm_notifier(&qcom_synx_notif_block);
 	if (rc) {
-		dprintk(SYNX_ERR, "SYNX hibernate registration failed, err %d\n", rc);
+		dprintk(SYNX_ERR, "SYNX pm registration failed, err %d\n", rc);
 		goto err;
 	}
 

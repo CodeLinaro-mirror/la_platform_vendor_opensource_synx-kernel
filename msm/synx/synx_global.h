@@ -127,6 +127,14 @@ static inline bool synx_is_valid_idx(u32 idx)
 }
 
 /**
+ * synx_gmem_init - Request hw_spinlock if required and memset starting
+ *                  index of global memory
+ *
+ * @return Zero on success, negative error on failure.
+ */
+int synx_gmem_init(void);
+
+/**
  * synx_global_mem_init - Initialize global shared memory
  *
  * @return Zero on success, negative error on failure.
