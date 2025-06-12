@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2023-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/types.h>
@@ -20,7 +20,8 @@ struct synx_ops synx_hwfence_ops = {
 	.get_status = NULL,
 	.merge = NULL,
 	.wait = NULL,
-	.cancel_async_wait = NULL
+	.cancel_async_wait = NULL,
+	.get = NULL
 };
 
 static struct synx_ops synx_internal_ops = {
@@ -34,7 +35,8 @@ static struct synx_ops synx_internal_ops = {
 	.get_status = synx_internal_get_status,
 	.merge = synx_internal_merge,
 	.wait = synx_internal_wait,
-	.cancel_async_wait = synx_internal_cancel_async_wait
+	.cancel_async_wait = synx_internal_cancel_async_wait,
+	.get = NULL
 };
 
 static bool is_hw_fence_client(enum synx_client_id synx_client_id)
@@ -179,3 +181,11 @@ int synx_enable_resources(enum synx_client_id id, enum synx_resource_type resour
 	return ret;
 }
 EXPORT_SYMBOL_GPL(synx_enable_resources);
+
+int synx_get(struct synx_session *session, struct synx_get_params *params)
+{
+	if (IS_ERR_OR_NULL(session) || !session->ops || !session->ops->get)
+		return -SYNX_INVALID;
+	return session->ops->get(session, params);
+}
+EXPORT_SYMBOL_GPL(synx_get);
