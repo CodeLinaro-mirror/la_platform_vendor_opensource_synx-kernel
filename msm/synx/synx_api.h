@@ -426,7 +426,7 @@ enum synx_release_type {
  */
 struct synx_release_indv_params {
 	uint32_t h_synx;
-	uint32_t result;
+	int32_t result;
 };
 
 /**

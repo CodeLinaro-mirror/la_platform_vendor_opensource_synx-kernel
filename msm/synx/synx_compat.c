@@ -91,6 +91,14 @@ int synx_release(struct synx_session *session, u32 h_synx)
 }
 EXPORT_SYMBOL(synx_release);
 
+int synx_release_n(struct synx_session *session, struct synx_release_n_params *pParams)
+{
+	if (IS_ERR_OR_NULL(session) || !session->ops || !session->ops->release_n)
+		return -SYNX_INVALID;
+	return session->ops->release_n(session, pParams);
+}
+EXPORT_SYMBOL_GPL(synx_release_n);
+
 int synx_signal(struct synx_session *session, u32 h_synx, enum synx_signal_status status)
 {
 	if (IS_ERR_OR_NULL(session) || !session->ops || !session->ops->signal)
