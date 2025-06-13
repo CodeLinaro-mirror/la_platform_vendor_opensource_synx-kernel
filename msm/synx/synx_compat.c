@@ -107,7 +107,7 @@ EXPORT_SYMBOL(synx_release);
 
 int synx_release_n(struct synx_session *session, struct synx_release_n_params *pParams)
 {
-	if (IS_ERR_OR_NULL(session) || !session->ops || !session->ops->release)
+	if (IS_ERR_OR_NULL(session) || !session->ops || !session->ops->release_n)
 		return -SYNX_INVALID;
 	return session->ops->release_n(session, pParams);
 }

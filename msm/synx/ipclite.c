@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2021-2025, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #define pr_fmt(fmt) "%s:%s: " fmt, KBUILD_MODNAME, __func__
 
@@ -162,16 +162,19 @@ static void ipclite_dump_inmem_logs(void)
 
 	/* Printing from current index till the end of buffer */
 	for (i = local_index % IPCLITE_LOG_BUF_SIZE; i < IPCLITE_LOG_BUF_SIZE; i++) {
-		if (ipclite_dbg_inmem->IPCLITELog[i][0])
+		if (ipclite_dbg_inmem->IPCLITELog[i][0]) {
 			pr_info("%s\n", ipclite_dbg_inmem->IPCLITELog[i]);
+			memset(ipclite_dbg_inmem->IPCLITELog[i], 0, IPCLITE_LOG_MSG_SIZE);
+		}
 	}
 
 	/* Printing from 0th index to current-1 index */
 	for (i = 0; i < local_index % IPCLITE_LOG_BUF_SIZE; i++) {
-		if (ipclite_dbg_inmem->IPCLITELog[i][0])
+		if (ipclite_dbg_inmem->IPCLITELog[i][0]) {
 			pr_info("%s\n", ipclite_dbg_inmem->IPCLITELog[i]);
+			memset(ipclite_dbg_inmem->IPCLITELog[i], 0, IPCLITE_LOG_MSG_SIZE);
+		}
 	}
-
 	return;
 }
 
@@ -1009,7 +1012,7 @@ static int32_t ipcmem_init(struct ipclite_mem *ipcmem, struct device_node *pn)
 {
 	int ret = 0;
 	size_t toc_offset = 0, partition_offset = 0;
-	uint32_t remote_pid;
+	uint32_t remote_pid, custom_value = 0;
 	struct device_node *cn;
 	struct ipcmem_offsets *offsets;
 	struct ipcmem_toc_data *toc_data = &ipcmem->toc_data;
@@ -1041,6 +1044,9 @@ static int32_t ipcmem_init(struct ipclite_mem *ipcmem, struct device_node *pn)
 
 	partition_offset += IPCMEM_TOC_SIZE;
 	setup_global_partition(ipcmem, partition_offset);
+	ret = of_property_read_u32(pn, "global_par_custom_val", &custom_value);
+
+	ipcmem->global_partition->hdr.custom_value = custom_value;
 
 	/* Setup Partition info*/
 	offsets->partition_info = toc_offset += sizeof(struct ipcmem_partition_entry);
@@ -1191,6 +1197,24 @@ static struct ipcmem_partition_header *get_ipcmem_partition_hdr(struct ipclite_m
 		return NULL;
 }
 
+static void ipclite_update_channel_status(void)
+{
+	int remote_pid;
+
+	for (remote_pid = 0; remote_pid < IPCMEM_NUM_HOSTS; remote_pid++) {
+		if (!is_host_enabled(remote_pid))
+			continue;
+		if (remote_pid == IPCMEM_APPS) {
+			*ipclite->channel[remote_pid].gstatus_ptr =
+							ipclite->channel[remote_pid].status;
+		} else {
+			if (ipclite->channel[remote_pid].status != INACTIVE) {
+				*ipclite->channel[remote_pid].gstatus_ptr = IN_PROGRESS;
+				ipclite->channel[remote_pid].status = IN_PROGRESS;
+			}
+		}
+	}
+}
 
 /* Sets up following fields of IPCLite channel structure:
  *	remote_pid,tx_fifo, rx_fifo
@@ -1767,6 +1791,7 @@ static int32_t get_global_partition_info_v0(struct global_region_info *global_ip
 	global_ipcmem->virt_base = (void *)((char *)global_partition +
 							global_partition->hdr.region_offset);
 	global_ipcmem->size = (size_t)(global_partition->hdr.region_size);
+	global_ipcmem->custom_value = global_partition->hdr.custom_value;
 
 	IPCLITE_LOG(LOW, "base = %p, size= %u ", global_ipcmem->virt_base,
 									global_ipcmem->size);
@@ -2032,6 +2057,67 @@ error:
 	return ret;
 }
 
+static int ipclite_driver_freeze(struct device *dev)
+{
+	IPCLITE_LOG(MED, "Entered ipclite hibernate\n");
+
+	if (unlikely(!ipclite)) {
+		pr_err("ipclite not initialized\n");
+		return -ENOMEM;
+	}
+
+	ipclite->ipcmem.init_status = false;
+	kfree(ipclite->ipcmem.partition);
+	return 0;
+}
+
+static int ipclite_driver_restore(struct device *dev)
+{
+	int ret = 0;
+	struct ipclite_channel broadcast;
+	struct platform_device *pdev = container_of(dev, struct platform_device, dev);
+	struct device_node *pn = pdev->dev.of_node;
+
+	if (unlikely(!ipclite)) {
+		pr_err("ipclite not initialized\n");
+		return -ENOMEM;
+	}
+
+	memset(ipclite->ipcmem.mem.virt_base, 0, ipclite->ipcmem.mem.size);
+
+	ret = ipcmem_init(&ipclite->ipcmem, pn);
+	if (ret) {
+		IPCLITE_LOG(ERR, "Failed to set up ipcmem during ipclite hibernate exit");
+		return ret;
+	}
+
+	ipclite_update_channel_status();
+
+	/* Broadcast init_done signal to all subsystems once mbox channels are set up */
+	if (ipclite->channel[IPCMEM_APPS].status == ACTIVE) {
+		broadcast = ipclite->channel[IPCMEM_APPS];
+		ret = mbox_send_message(broadcast.irq_info[IPCLITE_MEM_INIT_SIGNAL].mbox_chan,
+								NULL);
+		if (ret < 0) {
+			IPCLITE_LOG(ERR, "Failed to broadcast ipclite mem init signal");
+			return ret;
+		}
+		mbox_client_txdone(broadcast.irq_info[IPCLITE_MEM_INIT_SIGNAL].mbox_chan, 0);
+	}
+
+	/* Update the Global Debug variable for FW cores */
+	ipclite_dbg_info->debug_level = ipclite_debug_level;
+	ipclite_dbg_info->debug_control = ipclite_debug_control;
+
+	IPCLITE_LOG(MED, "Exited ipclite hibernate successfully\n");
+	return ret;
+}
+
+static const struct dev_pm_ops ipclite_hibernate_pm_ops = {
+	.freeze = ipclite_driver_freeze,
+	.restore = ipclite_driver_restore,
+};
+
 static const struct of_device_id ipclite_of_match[] = {
 	{ .compatible = "qcom,ipclite"},
 	{}
@@ -2043,6 +2129,7 @@ static struct platform_driver ipclite_driver = {
 	.driver = {
 		.name = "ipclite",
 		.of_match_table = ipclite_of_match,
+		.pm = &ipclite_hibernate_pm_ops,
 	},
 };
 

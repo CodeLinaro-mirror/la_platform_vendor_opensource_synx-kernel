@@ -222,9 +222,15 @@ int synx_util_init_group_coredata(struct synx_coredata *synx_obj,
 {
 	int rc;
 	struct dma_fence_array *array;
+	struct synx_fence_entry *entry = NULL;
 
 	if (IS_ERR_OR_NULL(synx_obj))
 		return -SYNX_INVALID;
+
+	entry = kzalloc(sizeof(*entry), GFP_KERNEL);
+	if (IS_ERR_OR_NULL(entry)) {
+		return -SYNX_NOMEM;
+	}
 
 	if (params->flags & SYNX_MERGE_GLOBAL_FENCE) {
 		rc = synx_alloc_global_handle(params->h_merged_obj);
@@ -234,14 +240,17 @@ int synx_util_init_group_coredata(struct synx_coredata *synx_obj,
 		rc = synx_alloc_local_handle(params->h_merged_obj);
 	}
 
-	if (rc != SYNX_SUCCESS)
+	if (rc != SYNX_SUCCESS) {
+		kfree(entry);
 		return rc;
+	}
 
 	array = dma_fence_array_create(num_objs, fences,
 				dma_context, 1, false);
 	if (IS_ERR_OR_NULL(array)) {
 		dprintk(SYNX_ERR, "dma fence array creation failed\n");
-		return -SYNX_INVALID;
+		rc = -SYNX_INVALID;
+		goto free;
 	}
 
 	synx_obj->fence = &array->base;
@@ -252,9 +261,34 @@ int synx_util_init_group_coredata(struct synx_coredata *synx_obj,
 	kref_init(&synx_obj->refcount);
 	mutex_init(&synx_obj->obj_lock);
 	INIT_LIST_HEAD(&synx_obj->reg_cbs_list);
+	set_bit(SYNX_NATIVE_FENCE_FLAG_ENABLED_BIT, &synx_obj->fence->flags);
 	synx_obj->status = synx_util_get_object_status(synx_obj);
 
 	synx_util_activate(synx_obj);
+	entry->key = (u64)synx_obj->fence;
+	if (params->flags & SYNX_MERGE_GLOBAL_FENCE)
+		entry->g_handle = *params->h_merged_obj;
+	else
+		entry->l_handle = *params->h_merged_obj;
+
+	rc = synx_util_insert_fence_entry(entry,
+			params->h_merged_obj,
+			params->flags & SYNX_MERGE_GLOBAL_FENCE);
+	/*
+	 * in case of non assert, the cleanup of dma-array has to be handled
+	 * in caller function appropriately.
+	 */
+	BUG_ON(rc != SYNX_SUCCESS);
+
+	return rc;
+free:
+	kfree(entry);
+	if (params->flags & SYNX_MERGE_GLOBAL_FENCE)
+		synx_global_put_ref(
+			synx_util_global_idx(*params->h_merged_obj));
+	else
+		clear_bit(synx_util_global_idx(*params->h_merged_obj),
+			synx_dev->native->bitmap);
 	return rc;
 }
 
@@ -432,6 +466,28 @@ void synx_util_object_destroy(struct synx_coredata *synx_obj)
 	dma_fence_put(synx_obj->fence);
 	kfree(synx_obj);
 	dprintk(SYNX_MEM, "released synx object %pK\n", synx_obj);
+}
+
+int synx_util_local_map_is_empty(unsigned long *bitmap, unsigned int size)
+{
+	u32 index = 0;
+
+	if (!bitmap)
+		return -SYNX_NOMEM;
+
+	index = find_next_bit((unsigned long *)bitmap,
+			size, index);
+
+	if (index >= size)
+		return SYNX_SUCCESS;
+
+	while (index < size) {
+		dprintk(SYNX_MEM, "local index being used %d\n", index);
+		index = find_next_bit((unsigned long *)(bitmap),
+				size, index + 1);
+	}
+
+	return -SYNX_INVALID;
 }
 
 long synx_util_get_free_handle(unsigned long *bitmap, unsigned int size)
@@ -1052,7 +1108,10 @@ static void synx_util_cleanup_fence(
 		if (g_status > SYNX_STATE_ACTIVE) {
 			dprintk(SYNX_DBG, "signaling fence %pK with status %u\n",
 				synx_obj->fence, g_status);
-			synx_native_signal_fence(synx_obj, g_status);
+			if (synx_util_is_merged_object(synx_obj))
+				synx_native_signal_merged_fence(synx_obj, g_status);
+			else
+				synx_native_signal_fence(synx_obj, g_status);
 		} else {
 			spin_lock_irqsave(synx_obj->fence->lock, flags);
 			if (synx_util_get_object_status_locked(synx_obj) ==
@@ -1557,6 +1616,7 @@ static void synx_client_cleanup(struct work_struct *dispatch)
 
 	dprintk(SYNX_VERB, "session %llu [%s] destroyed %pK\n",
 		client->id, client->name, client);
+	client->session.ops = NULL;
 	vfree(client);
 }
 

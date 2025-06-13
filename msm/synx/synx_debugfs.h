@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2019, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef __SYNX_DEBUGFS_H__
@@ -63,6 +63,9 @@ enum synx_columns_level {
 extern int synx_debug;
 extern u32 lower_handle_id, upper_handle_id;
 extern long synx_columns;
+
+/* Used for accessing synx_test ioctl nodes*/
+extern const struct file_operations synx_test_fops;
 
 static inline char *synx_debug_str(int level)
 {
