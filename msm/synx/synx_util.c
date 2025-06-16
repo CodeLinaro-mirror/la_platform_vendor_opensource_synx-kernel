@@ -18,7 +18,7 @@ extern void synx_external_callback(s32 sync_obj, int status, void *data);
 int synx_util_init_coredata(struct synx_coredata *synx_obj,
 	struct synx_create_params *params,
 	struct dma_fence_ops *ops,
-	u64 dma_context)
+	u64 dma_context, u64 security_key)
 {
 	int rc = -SYNX_INVALID;
 	u64 seq = 0;
@@ -36,7 +36,7 @@ int synx_util_init_coredata(struct synx_coredata *synx_obj,
 			synx_util_global_idx(*params->h_synx));
 		synx_obj->global_idx = synx_util_global_idx(*params->h_synx);
 	} else if (params->flags & SYNX_CREATE_GLOBAL_FENCE) {
-		rc = synx_alloc_global_handle(params->h_synx);
+		rc = synx_alloc_global_handle(params->h_synx, security_key);
 		synx_obj->global_idx = synx_util_global_idx(*params->h_synx);
 	} else {
 		rc = synx_alloc_local_handle(params->h_synx);
@@ -48,6 +48,9 @@ int synx_util_init_coredata(struct synx_coredata *synx_obj,
 	synx_obj->map_count = 1;
 	synx_obj->num_bound_synxs = 0;
 	synx_obj->type |= params->flags;
+#if defined(CONFIG_EXTENSIBLE_GLCOREDATA)
+	synx_obj->security_key = security_key;
+#endif
 	kref_init(&synx_obj->refcount);
 	mutex_init(&synx_obj->obj_lock);
 	INIT_LIST_HEAD(&synx_obj->reg_cbs_list);
@@ -239,7 +242,7 @@ int synx_util_init_group_coredata(struct synx_coredata *synx_obj,
 	struct dma_fence **fences,
 	struct synx_merge_params *params,
 	u32 num_objs,
-	u64 dma_context)
+	u64 dma_context, u64 security_key)
 {
 	int rc;
 	struct dma_fence_array *array;
@@ -254,7 +257,7 @@ int synx_util_init_group_coredata(struct synx_coredata *synx_obj,
 	}
 
 	if (params->flags & SYNX_MERGE_GLOBAL_FENCE) {
-		rc = synx_alloc_global_handle(params->h_merged_obj);
+		rc = synx_alloc_global_handle(params->h_merged_obj, security_key);
 		synx_obj->global_idx =
 			synx_util_global_idx(*params->h_merged_obj);
 	} else {
@@ -279,6 +282,9 @@ int synx_util_init_group_coredata(struct synx_coredata *synx_obj,
 	synx_obj->type = params->flags;
 	synx_obj->type |= SYNX_CREATE_MERGED_FENCE;
 	synx_obj->num_bound_synxs = 0;
+#if defined(CONFIG_EXTENSIBLE_GLCOREDATA)
+	synx_obj->security_key = security_key;
+#endif
 	kref_init(&synx_obj->refcount);
 	mutex_init(&synx_obj->obj_lock);
 	INIT_LIST_HEAD(&synx_obj->reg_cbs_list);
@@ -544,7 +550,7 @@ u32 synx_encode_handle(u32 idx, u32 core_id, bool global_idx)
 	return handle;
 }
 
-int synx_alloc_global_handle(u32 *new_synx)
+int synx_alloc_global_handle(u32 *new_synx, u64 security_key)
 {
 	int rc;
 	u32 idx;
@@ -557,7 +563,7 @@ int synx_alloc_global_handle(u32 *new_synx)
 	dprintk(SYNX_DBG, "allocated global handle %u (0x%x)\n",
 		*new_synx, *new_synx);
 
-	rc = synx_global_init_coredata(*new_synx);
+	rc = synx_global_init_coredata(*new_synx, security_key);
 	return rc;
 }
 

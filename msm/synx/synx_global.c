@@ -292,7 +292,7 @@ int synx_global_alloc_index(u32 *idx)
 	return rc;
 }
 
-int synx_global_init_coredata(u32 h_synx)
+int synx_global_init_coredata(u32 h_synx, u64 security_key)
 {
 	int rc;
 	unsigned long flags;
@@ -333,12 +333,23 @@ int synx_global_init_coredata(u32 h_synx)
 		synx_gmem_unlock(idx, &flags);
 		return -SYNX_INVALID;
 	}
+#if defined(CONFIG_EXTENSIBLE_GLCOREDATA)
+	if (synx_g_obj->security_key != 0) {
+		dprintk(SYNX_ERR, "Security key not cleared for idx %u\n", idx);
+		synx_gmem_unlock(idx, &flags);
+		return -SYNX_INVALID;
+	}
+#endif
 	memset(synx_g_obj, 0, glcoredata_size);
 	/* set status to active */
 	synx_g_obj->status = SYNX_STATE_ACTIVE;
 	synx_g_obj->refcount = 1;
 	synx_g_obj->subscribers = (1UL << SYNX_CORE_APSS);
 	synx_g_obj->handle = h_synx;
+#if defined(CONFIG_EXTENSIBLE_GLCOREDATA)
+	if (security_key)
+		synx_g_obj->security_key = security_key;
+#endif
 	synx_gmem_unlock(idx, &flags);
 
 	return SYNX_SUCCESS;

@@ -117,15 +117,15 @@ void synx_util_release_fence_entry(u64 key);
 int synx_util_init_coredata(struct synx_coredata *synx_obj,
 			struct synx_create_params *params,
 			struct dma_fence_ops *ops,
-			u64 dma_context);
+			u64 dma_context, u64 security_key);
 int synx_util_init_group_coredata(struct synx_coredata *synx_obj,
 			struct dma_fence **fences,
 			struct synx_merge_params *params,
 			u32 num_objs,
-			u64 dma_context);
+			u64 dma_context, u64 security_key);
 
 /* handle related functions */
-int synx_alloc_global_handle(u32 *new_synx);
+int synx_alloc_global_handle(u32 *new_synx, u64 security_key);
 int synx_alloc_local_handle(u32 *new_synx);
 long synx_util_get_free_handle(unsigned long *bitmap, unsigned int size);
 int synx_util_init_handle(struct synx_client *client, struct synx_coredata *obj,
