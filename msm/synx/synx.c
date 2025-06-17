@@ -16,6 +16,8 @@
 #include <linux/uaccess.h>
 #include <linux/vmalloc.h>
 #include <linux/version.h>
+#include <linux/suspend.h>
+#include <linux/notifier.h>
 
 #include "synx_debugfs.h"
 #include "synx_private.h"
@@ -2082,6 +2084,20 @@ retry:
 	*params->new_h_synx =
 		synx_util_get_fence_entry((u64)params->fence, global);
 	if (*params->new_h_synx == 0) {
+		if (dma_fence_is_array((struct dma_fence *)params->fence)) {
+			if (!test_bit(SYNX_NATIVE_FENCE_FLAG_ENABLED_BIT,
+				&((struct dma_fence *)params->fence)->flags)) {
+				dprintk(SYNX_ERR, "External dma-array import not supported %pK\n",
+					params->fence);
+				return -SYNX_NOSUPPORT;
+			}
+			// Only allow support if dma-fence-array is signaled.
+			if (!dma_fence_is_signaled((struct dma_fence *)params->fence)) {
+				dprintk(SYNX_ERR, "unsignaled dma array import not allowed %pK\n",
+					params->fence);
+				return -SYNX_NOSUPPORT;
+			}
+		}
 		/* create a new synx obj and add to fence map */
 		synx_util_map_import_params_to_create(params, &c_params);
 		scnprintf(name, SYNX_OBJ_NAME_LEN, "import-client-%d",
@@ -2253,11 +2269,6 @@ static int synx_native_import_indv(struct synx_client *client,
 
 	if (likely(params->flags & SYNX_IMPORT_DMA_FENCE) && !IS_ERR_OR_NULL(params->fence)) {
 
-		if (dma_fence_is_array(params->fence)) {
-			dprintk(SYNX_ERR, "Cannot import dma fence array %pK\n", params->fence);
-			rc = -SYNX_NOSUPPORT;
-			goto bail;
-		}
 
 		rc = synx_native_import_fence(client, params);
 	} else if ((params->flags &
@@ -2265,7 +2276,6 @@ static int synx_native_import_indv(struct synx_client *client,
 		rc = synx_native_import_handle(client, params);
 	}
 
-bail:
 	if ((flags & SYNX_IMPORT_SYNX_FENCE) && IS_HW_FENCE(hw_fence)) {
 		dma_fence_put((struct dma_fence *)params->fence);
 		params->fence = fence;
@@ -2352,7 +2362,7 @@ static int synx_handle_initialize(struct synx_private_ioctl_arg *k_ioctl,
 		return -SYNX_INVALID;
 
 	if (!IS_ERR_OR_NULL(*session)) {
-		dprintk(SYNX_ERR, "Session is already initialized %pK \n", *session);
+		dprintk(SYNX_ERR, "Session is already initialized %pK\n", *session);
 		return -SYNX_ALREADY;
 	}
 
@@ -2367,12 +2377,59 @@ static int synx_handle_initialize(struct synx_private_ioctl_arg *k_ioctl,
 
 	(*session) = synx_initialize(&params);
 	if (IS_ERR_OR_NULL(*session)) {
-		dprintk(SYNX_ERR, "Failed to initialize session, err: %ld \n", PTR_ERR(*session));
+		dprintk(SYNX_ERR, "Failed to initialize session, err: %ld\n", PTR_ERR(*session));
 		return -SYNX_INVALID;
 	}
 
 	return SYNX_SUCCESS;
+}
 
+static int synx_handle_initialize_v3(struct synx_private_ioctl_arg *k_ioctl,
+	struct synx_session **session)
+{
+	struct synx_initialize_v3 init_info;
+	struct synx_initialization_params params = {0};
+	struct synx_queue_desc qdesc = {0};
+
+	if (k_ioctl->size != sizeof(init_info))
+		return -SYNX_INVALID;
+
+	if (!IS_ERR_OR_NULL(*session)) {
+		dprintk(SYNX_ERR, "Session is already initialized %pK\n", *session);
+		return -SYNX_ALREADY;
+	}
+
+	if (copy_from_user(&init_info,
+			u64_to_user_ptr(k_ioctl->ioctl_ptr),
+			k_ioctl->size))
+		return -EFAULT;
+
+	params.id = init_info.id;
+	params.flags = init_info.flags;
+	params.name = init_info.name;
+	params.ptr = &qdesc;
+
+	if (init_info.qdesc.type >= SYNX_MEM_MAX)
+		return -SYNX_INVALID;
+
+	(*session) = synx_initialize(&params);
+	if (IS_ERR_OR_NULL(*session)) {
+		dprintk(SYNX_ERR, "Failed to initialize session, err: %ld\n", PTR_ERR(*session));
+		return -SYNX_INVALID;
+	}
+
+	if (init_info.qdesc.type == SYNX_MEM_DEFAULT) {
+		init_info.qdesc.size = qdesc.size;
+		init_info.qdesc.base_offset = qdesc.base_offset;
+		init_info.qdesc.wr_idx_offset = qdesc.wr_idx_offset;
+	}
+
+	if (copy_to_user(u64_to_user_ptr(k_ioctl->ioctl_ptr),
+			&init_info,
+			k_ioctl->size))
+		return -EFAULT;
+
+	return SYNX_SUCCESS;
 }
 
 static int synx_handle_create(struct synx_private_ioctl_arg *k_ioctl,
@@ -2932,6 +2989,10 @@ static long synx_ioctl(struct file *filep,
 		rc = synx_handle_initialize(&k_ioctl, &session);
 		filep->private_data = session;
 		break;
+	case SYNX_INITIALIZE_V3:
+		rc = synx_handle_initialize_v3(&k_ioctl, &session);
+		filep->private_data = session;
+		break;
 	case SYNX_CREATE:
 		rc = synx_handle_create(&k_ioctl, session);
 		break;
@@ -3091,6 +3152,9 @@ struct synx_session *synx_internal_initialize(
 		params->id >= SYNX_CLIENT_END)
 		return ERR_PTR(-SYNX_NOSUPPORT);
 
+	if (!synx_dev)
+		return ERR_PTR(-SYNX_INVALID);
+
 	client = vzalloc(sizeof(*client));
 	if (IS_ERR_OR_NULL(client)) {
 		dprintk(SYNX_ERR, "client allocation failed\n");
@@ -3110,9 +3174,6 @@ struct synx_session *synx_internal_initialize(
 	init_waitqueue_head(&client->event_wq);
 	/* zero idx not allowed */
 	set_bit(0, client->cb_bitmap);
-
-	if (!synx_dev)
-		return ERR_PTR(-SYNX_INVALID);
 
 	spin_lock_bh(&synx_dev->native->metadata_map_lock);
 	hash_add(synx_dev->native->client_metadata_map,
@@ -3458,6 +3519,69 @@ static int synx_internal_init_ops(struct synx_ops *synx_ops)
 	return SYNX_SUCCESS;
 }
 
+static int synx_hibernate_entry(void)
+{
+	int rc = SYNX_SUCCESS;
+
+	rc = synx_global_memory_is_empty();
+	if (rc) {
+		dprintk(SYNX_ERR, "Global memory is not empty\n");
+		return -SYNX_EAGAIN;
+	}
+
+	rc = synx_util_local_map_is_empty(synx_dev->native->bitmap,
+		SYNX_MAX_OBJS);
+	if (rc) {
+		dprintk(SYNX_ERR, "Local memory is not empty\n");
+		return -SYNX_EAGAIN;
+	}
+
+	rc = synx_global_free_synx_hwlock();
+	if (rc) {
+		dprintk(SYNX_ERR, "Failed to release synx_hwlock\n");
+		return -SYNX_EAGAIN;
+	}
+
+	dprintk(SYNX_DBG, "Synx hibernate entry successful\n");
+
+	return rc;
+}
+
+static int synx_hibernate_exit(void)
+{
+	int rc = SYNX_SUCCESS;
+
+	rc = synx_global_mem_init();
+	if (rc) {
+		dprintk(SYNX_ERR, "shared mem init failed, err=%d\n", rc);
+		return -SYNX_EAGAIN;
+	}
+
+	dprintk(SYNX_DBG, "Synx hibernate exit successful\n");
+
+	return rc;
+}
+
+static int qcom_synx_hibernation_notifier(struct notifier_block *nb,
+				unsigned long event, void *dummy)
+{
+	int rc = SYNX_SUCCESS;
+
+	if (event == PM_HIBERNATION_PREPARE)
+		rc = synx_hibernate_entry();
+	else if (event == PM_POST_HIBERNATION)
+		rc = synx_hibernate_exit();
+
+	if (rc)
+		return NOTIFY_BAD;
+
+	return NOTIFY_OK;
+}
+
+static struct notifier_block qcom_synx_notif_block = {
+	.notifier_call = qcom_synx_hibernation_notifier,
+};
+
 static int __init synx_init(void)
 {
 	int rc;
@@ -3547,6 +3671,7 @@ static int __init synx_init(void)
 	synx_shared_ops.get_fence = synx_internal_get_dma_fence;
 	synx_shared_ops.notify_recover = synx_internal_notify_recover;
 	synx_shared_ops.signal_fence = synx_internal_signal_fence;
+	synx_shared_ops.dma_add_cb_no_enable_sig = dma_fence_add_callback;
 	rc  = synx_hwfence_init_interops(&synx_shared_ops, &hwfence_shared_ops);
 	if (rc) {
 		dprintk(SYNX_ERR, "Hw fence inter-op mapping failed, err %d\n", rc);
@@ -3554,6 +3679,12 @@ static int __init synx_init(void)
 
 	ipclite_register_client(synx_ipc_callback, NULL);
 	synx_local_mem_init();
+
+	rc = register_pm_notifier(&qcom_synx_notif_block);
+	if (rc) {
+		dprintk(SYNX_ERR, "SYNX hibernate registration failed, err %d\n", rc);
+		goto err;
+	}
 
 	dprintk(SYNX_INFO, "device initialization success\n");
 

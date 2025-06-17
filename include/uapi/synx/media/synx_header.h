@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only WITH Linux-syscall-note */
 /*
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
 #ifndef __UAPI_SYNX_H__
@@ -320,6 +320,40 @@ struct synx_initialize_v2 {
 };
 
 /**
+ * struct synx_qdesc_info - info of synx queue
+ *
+ * @type          : Synx queue memory type
+ * @heap_fd       : File descriptor of the queue (dma buf heap)
+ * @size          : Size of the memory
+ * @base_offset   : Offset for queue base
+ * @wr_idx_offset : Offset for write index in the queue
+ */
+struct synx_qdesc_info {
+	__u32 type;
+	__u32 heap_fd;
+	__u64 size;
+	__u64 base_offset;
+	__u64 wr_idx_offset;
+};
+
+/**
+ * struct synx_initialize_v3 - synx initialization information
+ *
+ * @name      : Optional string representation of the synx object
+ * @id        : Client identifier
+ * @flags     : synx initialization flags
+ * @qdesc     : Memory descriptor of allocated queue
+ * @reserved  : Reserved
+ */
+struct synx_initialize_v3 {
+	char name[64];
+	__u32 id;
+	__u32 flags;
+	struct synx_qdesc_info qdesc;
+	__u64 reserved;
+};
+
+/**
  * struct synx_release_info - Synx release arr parameters
  *
  * @synx_obj     : Synx handle to be released
@@ -394,5 +428,6 @@ struct synx_recover_info {
 #define SYNX_INITIALIZE                      14
 #define SYNX_RECOVER                         15
 #define SYNX_RELEASE_N                       16
+#define SYNX_INITIALIZE_V3                   17
 
 #endif /* __UAPI_SYNX_H__ */
