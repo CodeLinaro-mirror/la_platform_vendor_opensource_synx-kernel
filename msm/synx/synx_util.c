@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/slab.h>
@@ -18,7 +18,7 @@ extern void synx_external_callback(s32 sync_obj, int status, void *data);
 int synx_util_init_coredata(struct synx_coredata *synx_obj,
 	struct synx_create_params *params,
 	struct dma_fence_ops *ops,
-	u64 dma_context)
+	u64 dma_context, u64 security_key)
 {
 	int rc = -SYNX_INVALID;
 	u64 seq = 0;
@@ -36,7 +36,7 @@ int synx_util_init_coredata(struct synx_coredata *synx_obj,
 			synx_util_global_idx(*params->h_synx));
 		synx_obj->global_idx = synx_util_global_idx(*params->h_synx);
 	} else if (params->flags & SYNX_CREATE_GLOBAL_FENCE) {
-		rc = synx_alloc_global_handle(params->h_synx);
+		rc = synx_alloc_global_handle(params->h_synx, security_key);
 		synx_obj->global_idx = synx_util_global_idx(*params->h_synx);
 	} else {
 		rc = synx_alloc_local_handle(params->h_synx);
@@ -48,6 +48,9 @@ int synx_util_init_coredata(struct synx_coredata *synx_obj,
 	synx_obj->map_count = 1;
 	synx_obj->num_bound_synxs = 0;
 	synx_obj->type |= params->flags;
+#if defined(CONFIG_EXTENSIBLE_GLCOREDATA)
+	synx_obj->security_key = security_key;
+#endif
 	kref_init(&synx_obj->refcount);
 	mutex_init(&synx_obj->obj_lock);
 	INIT_LIST_HEAD(&synx_obj->reg_cbs_list);
@@ -82,7 +85,6 @@ int synx_util_init_coredata(struct synx_coredata *synx_obj,
 		dma_fence_init(fence, ops, fence_lock, dma_context, seq);
 
 		synx_obj->fence = fence;
-		synx_util_activate(synx_obj);
 		dprintk(SYNX_MEM,
 			"allocated backing fence %pK\n", fence);
 
@@ -124,6 +126,28 @@ free:
 	return rc;
 }
 
+int synx_dma_add_cb_no_enable_sig(struct dma_fence *fence,
+	struct dma_fence_cb *cb, dma_fence_func_t func)
+{
+	unsigned long flags;
+	int ret = 0;
+
+	if (WARN_ON(!fence || !func))
+		return -EINVAL;
+
+	spin_lock_irqsave(fence->lock, flags);
+	if (test_bit(DMA_FENCE_FLAG_SIGNALED_BIT, &fence->flags)) {
+		INIT_LIST_HEAD(&cb->node);
+		ret = -ENOENT;
+	} else {
+		cb->func = func;
+		list_add_tail(&cb->node, &fence->cb_list);
+	}
+	spin_unlock_irqrestore(fence->lock, flags);
+
+	return ret;
+}
+
 int synx_util_add_callback(struct synx_coredata *synx_obj,
 	u32 h_synx)
 {
@@ -151,7 +175,7 @@ int synx_util_add_callback(struct synx_coredata *synx_obj,
 	 * get notified on signal from clients using
 	 * native dma fence operations.
 	 */
-	rc = dma_fence_add_callback(synx_obj->fence,
+	rc = synx_dma_add_cb_no_enable_sig(synx_obj->fence,
 			&signal_cb->fence_cb, synx_fence_callback);
 	if (rc != 0) {
 		if (rc == -ENOENT) {
@@ -218,30 +242,39 @@ int synx_util_init_group_coredata(struct synx_coredata *synx_obj,
 	struct dma_fence **fences,
 	struct synx_merge_params *params,
 	u32 num_objs,
-	u64 dma_context)
+	u64 dma_context, u64 security_key)
 {
 	int rc;
 	struct dma_fence_array *array;
+	struct synx_fence_entry *entry = NULL;
 
 	if (IS_ERR_OR_NULL(synx_obj))
 		return -SYNX_INVALID;
 
+	entry = kzalloc(sizeof(*entry), GFP_KERNEL);
+	if (IS_ERR_OR_NULL(entry)) {
+		return -SYNX_NOMEM;
+	}
+
 	if (params->flags & SYNX_MERGE_GLOBAL_FENCE) {
-		rc = synx_alloc_global_handle(params->h_merged_obj);
+		rc = synx_alloc_global_handle(params->h_merged_obj, security_key);
 		synx_obj->global_idx =
 			synx_util_global_idx(*params->h_merged_obj);
 	} else {
 		rc = synx_alloc_local_handle(params->h_merged_obj);
 	}
 
-	if (rc != SYNX_SUCCESS)
+	if (rc != SYNX_SUCCESS) {
+		kfree(entry);
 		return rc;
+	}
 
 	array = dma_fence_array_create(num_objs, fences,
 				dma_context, 1, false);
 	if (IS_ERR_OR_NULL(array)) {
 		dprintk(SYNX_ERR, "dma fence array creation failed\n");
-		return -SYNX_INVALID;
+		rc = -SYNX_INVALID;
+		goto free;
 	}
 
 	synx_obj->fence = &array->base;
@@ -249,12 +282,39 @@ int synx_util_init_group_coredata(struct synx_coredata *synx_obj,
 	synx_obj->type = params->flags;
 	synx_obj->type |= SYNX_CREATE_MERGED_FENCE;
 	synx_obj->num_bound_synxs = 0;
+#if defined(CONFIG_EXTENSIBLE_GLCOREDATA)
+	synx_obj->security_key = security_key;
+#endif
 	kref_init(&synx_obj->refcount);
 	mutex_init(&synx_obj->obj_lock);
 	INIT_LIST_HEAD(&synx_obj->reg_cbs_list);
+	set_bit(SYNX_NATIVE_FENCE_FLAG_ENABLED_BIT, &synx_obj->fence->flags);
 	synx_obj->status = synx_util_get_object_status(synx_obj);
 
-	synx_util_activate(synx_obj);
+	entry->key = (u64)synx_obj->fence;
+	if (params->flags & SYNX_MERGE_GLOBAL_FENCE)
+		entry->g_handle = *params->h_merged_obj;
+	else
+		entry->l_handle = *params->h_merged_obj;
+
+	rc = synx_util_insert_fence_entry(entry,
+			params->h_merged_obj,
+			params->flags & SYNX_MERGE_GLOBAL_FENCE);
+	/*
+	 * in case of non assert, the cleanup of dma-array has to be handled
+	 * in caller function appropriately.
+	 */
+	BUG_ON(rc != SYNX_SUCCESS);
+
+	return rc;
+free:
+	kfree(entry);
+	if (params->flags & SYNX_MERGE_GLOBAL_FENCE)
+		synx_global_put_ref(
+			synx_util_global_idx(*params->h_merged_obj));
+	else
+		clear_bit(synx_util_global_idx(*params->h_merged_obj),
+			synx_dev->native->bitmap);
 	return rc;
 }
 
@@ -490,7 +550,7 @@ u32 synx_encode_handle(u32 idx, u32 core_id, bool global_idx)
 	return handle;
 }
 
-int synx_alloc_global_handle(u32 *new_synx)
+int synx_alloc_global_handle(u32 *new_synx, u64 security_key)
 {
 	int rc;
 	u32 idx;
@@ -503,7 +563,7 @@ int synx_alloc_global_handle(u32 *new_synx)
 	dprintk(SYNX_DBG, "allocated global handle %u (0x%x)\n",
 		*new_synx, *new_synx);
 
-	rc = synx_global_init_coredata(*new_synx);
+	rc = synx_global_init_coredata(*new_synx, security_key);
 	return rc;
 }
 
@@ -1057,6 +1117,14 @@ static void synx_util_cleanup_fence(
 	f_status = synx_util_get_object_status(synx_obj);
 	dprintk(SYNX_VERB, "f_status:%u, signal_cb:%p, map:%u, idx:%u\n",
 		f_status, signal_cb, synx_obj->map_count, synx_obj->global_idx);
+
+	/*
+	 * Enable signaling for dma-fence done before releasing as during fence creation
+	 * this was not done. This API can be called multiple times on same fence but subsquent
+	 * calls are ignored.
+	 */
+	synx_util_activate(synx_obj);
+
 	if (synx_obj->map_count == 0 &&
 		(signal_cb != NULL) &&
 		(synx_obj->global_idx != 0) &&

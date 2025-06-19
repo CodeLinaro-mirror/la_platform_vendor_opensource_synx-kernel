@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2021-2023,2025, Qualcomm Innovation Center, Inc. All rights reserved..
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #include <linux/hwspinlock.h>
 #include <linux/module.h>
@@ -69,17 +69,11 @@
 		} \
 	} while (0)
 
-/* IPCLite Debug enable status */
-#define IS_DEBUG_CONFIG(ipclite_debug) (ipclite_debug_control & ipclite_debug)
-
-/* IPCLite Feature enable status */
-#define IS_FEATURE_CONFIG(ipclite_feature) (feature_mask & ipclite_feature)
-
 /* Global Atomic status */
 #define ATOMIC_HW_MUTEX_ACQUIRE \
-(IS_FEATURE_CONFIG(IPCLITE_GLOBAL_ATOMIC) ?: ipclite_hw_mutex_acquire())
+(is_feature_config(IPCLITE_GLOBAL_ATOMIC) ?: ipclite_hw_mutex_acquire())
 #define ATOMIC_HW_MUTEX_RELEASE \
-(IS_FEATURE_CONFIG(IPCLITE_GLOBAL_ATOMIC) ?: ipclite_hw_mutex_release())
+(is_feature_config(IPCLITE_GLOBAL_ATOMIC) ?: ipclite_hw_mutex_release())
 
 /* API Structure */
 struct ipclite_api_list {
@@ -406,9 +400,13 @@ struct ipclite_info {
 #define GLOBAL_PARTITION_HDR_SIZE		(4*1024)
 
 #define GLOBAL_REGION_OFFSET			(4*1024)
-#define GLOBAL_REGION_SIZE				(124*1024)
-
+#if IS_ENABLED(CONFIG_EXTENSIBLE_GLCOREDATA)
+#define GLOBAL_REGION_SIZE			(252*1024)
+#define GLOBAL_PARTITION_SIZE			(256*1024)
+#else
+#define GLOBAL_REGION_SIZE			(124*1024)
 #define GLOBAL_PARTITION_SIZE			(128*1024)
+#endif
 #define GLOBAL_PARTITION_FLAGS			IPCMEM_FLAGS_ENABLE_RW_PROTECTION
 
 /*Debug partition parameters*/
