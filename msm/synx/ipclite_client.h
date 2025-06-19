@@ -31,6 +31,7 @@ enum ipclite_feature_mask {
 	IPCLITE_GLOBAL_ATOMIC = 0x0001ULL,
 	IPCLITE_TEST_SUITE = 0x0002ULL,
 	IPCLITE_GLOBAL_LOCK = 0x0004ULL,
+	IPCLITE_CMPXCHG_LOCK = 0x0008ULL,
 };
 
 /* Max Atomic locks supported*/
@@ -39,6 +40,7 @@ enum ipclite_feature_mask {
 struct global_region_info {
 	void *virt_base;
 	uint32_t size;
+	uint32_t custom_value;
 };
 
 typedef int (*IPCLite_Client)(uint32_t proc_id,  int64_t data,  void *priv);

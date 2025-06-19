@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only WITH Linux-syscall-note */
 /*
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef __UAPI_SYNX_H__
@@ -207,6 +207,49 @@ struct synx_merge_v2 {
 };
 
 /**
+ * struct synx_merge_indv_info - Merge information for synx objects
+ *
+ * @synx_objs :  Pointer to synx object array to merge
+ * @num_objs  :  Number of objects in the array
+ * @merged    :  Merged synx object
+ * @flags     :  Merge flags
+ * @reserved  :  Reserved
+ * @client_data_hi   : most significant 32 bits of the 64-bit client_data propagated
+ *                     to waiting client during signal.
+ * @client_data_lo   : least significant 32 bits of the 64-bit client_data propagated
+ *                     to waiting client during signal.
+ * @security_key_hi  : most significant 32 bits of the 64-bit security_key for authentication.
+ *                     If security_key is not required use SYNX_NO_SECURITY_KEY macro.
+ * @security_key_lo  : least significant 32 bits of the 64-bit security_key for authentication.
+ *                     If security_key is not required use SYNX_NO_SECURITY_KEY macro.
+ */
+struct synx_merge_indv_info {
+	__u64 synx_objs;
+	__u32 num_objs;
+	__u32 merged;
+	__u32 flags;
+	__u32 reserved;
+	__u32 client_data_hi;
+	__u32 client_data_lo;
+	__u32 security_key_hi;
+	__u32 security_key_lo;
+};
+
+/**
+ * struct synx_merge_n_info - Merge information for synx objects
+ * @type         : Merge params type
+ * @reserved     : Reserved
+ * @indv         : params to create a single merged handle
+ */
+struct synx_merge_n_info {
+	__u32 type;
+	__u32 reserved;
+	union {
+		struct synx_merge_indv_info indv;
+	};
+};
+
+/**
  * struct synx_wait - Sync object wait information
  *
  * @synx_obj   : Sync object to wait on
@@ -265,6 +308,31 @@ struct synx_import_info {
 };
 
 /**
+ * struct synx_import_info_v2 - import info v2
+ *
+ * @synx_obj         : Synx handle to be imported
+ * @flags            : Import flags
+ * @new_synx_obj     : Synx object created in import
+ * @reserved         : Reserved
+ * @desc             : External fence descriptor
+ * @client_data_hi   : most significant 32 bits of the 64-bit client_data
+ * @client_data_lo   : least significant 32 bits of the 64-bit client_data
+ * @security_key_hi  : most significant 32 bits of the 64-bit security_key
+ * @security_key_lo  : least significant 32 bits of the 64-bit security_key
+ */
+struct synx_import_info_v2 {
+	__u32 synx_obj;
+	__u32 flags;
+	__u32 new_synx_obj;
+	__u32 reserved;
+	struct synx_fence_desc desc;
+	__u32 client_data_hi;
+	__u32 client_data_lo;
+	__u32 security_key_hi;
+	__u32 security_key_lo;
+};
+
+/**
  * struct synx_import_arr_info - import list info
  *
  * @list     : List of synx_import_info
@@ -320,6 +388,82 @@ struct synx_initialize_v2 {
 };
 
 /**
+ * struct synx_qdesc_info - info of synx queue
+ *
+ * @type          : Synx queue memory type
+ * @heap_fd       : File descriptor of the queue (dma buf heap)
+ * @size          : Size of the memory
+ * @base_offset   : Offset for queue base
+ * @wr_idx_offset : Offset for write index in the queue
+ */
+struct synx_qdesc_info {
+	__u32 type;
+	__u32 heap_fd;
+	__u64 size;
+	__u64 base_offset;
+	__u64 wr_idx_offset;
+};
+
+/**
+ * struct synx_initialize_v3 - synx initialization information
+ *
+ * @name      : Optional string representation of the synx object
+ * @id        : Client identifier
+ * @flags     : synx initialization flags
+ * @qdesc     : Memory descriptor of allocated queue
+ * @reserved  : Reserved
+ */
+struct synx_initialize_v3 {
+	char name[64];
+	__u32 id;
+	__u32 flags;
+	struct synx_qdesc_info qdesc;
+	__u64 reserved;
+};
+
+/**
+ * struct synx_release_info - Synx release arr parameters
+ *
+ * @synx_obj     : Synx handle to be released
+ * @status       : release status of synx_obj
+ * @reserved     : Reserved
+ */
+struct synx_release_indv_info {
+	__u32 synx_obj;
+	__s32 status;
+	__u32 reserved;
+};
+
+/**
+ * struct synx_op_arr_info - Generic list info for synx objects for batch
+ *                           operations.
+ *
+ * @synx_objs :  list of individual handle info
+ * @num_objs  :  Number of objects in the array
+ * @reserved  : Reserved
+ */
+struct synx_op_arr_info {
+	__u64 list;
+	__u32 num_objs;
+	__u32 reserved;
+};
+
+/**
+ * struct synx_release_n_info - Release information for synx objects
+ *
+ * @type     : Release params type
+ * @indv     : Params to release an individual handle
+ * @arr      : Params to release an array of handles
+ */
+struct synx_release_n_info {
+	__u32 type;
+	union {
+		struct synx_release_indv_info indv;
+		struct synx_op_arr_info arr;
+	};
+};
+
+/**
  * struct synx_recover_info - synx recover information
  *
  * @id       : Client identifier
@@ -351,5 +495,9 @@ struct synx_recover_info {
 #define SYNX_GETFENCE_FD                     13
 #define SYNX_INITIALIZE                      14
 #define SYNX_RECOVER                         15
-
+#define SYNX_RELEASE_N                       16
+#define SYNX_INITIALIZE_V3                   17
+#define SYNX_IMPORT_V2                       18
+#define SYNX_IMPORT_ARR_V2                   19
+#define SYNX_MERGE_N                         20
 #endif /* __UAPI_SYNX_H__ */

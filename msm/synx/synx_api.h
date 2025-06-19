@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2019, 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef __SYNX_API_H__
@@ -20,9 +20,13 @@
  *                            when it doesn't hold a valid synx handle
  */
 #define SYNX_INVALID_HANDLE 0
-#define SYNX_HW_FENCE_CLIENT_START 1024
-#define SYNX_HW_FENCE_CLIENT_END 4096
 #define SYNX_MAX_SIGNAL_PER_CLIENT 64
+
+/**
+* SYNX_NO_SECURITY_KEY     : No security key is associated with Synx obj
+*/
+#define SYNX_NO_SECURITY_KEY 0
+
 /* synx object states */
 #define SYNX_STATE_INVALID             0    // Invalid synx object
 #define SYNX_STATE_ACTIVE              1    // Synx object has not been signaled
@@ -78,6 +82,9 @@ enum synx_init_flags {
  *                               to import a synx handle as local synx handle.
  *                            b. SYNX_IMPORT_SYNX_FENCE|SYNX_IMPORT_GLOBAL_FENCE
  *                               to import a synx handle as global synx handle.
+ *                            If client passes SYNX_IMPORT_SYNX_FENCE without specifying
+ *                            SYNX_IMPORT_LOCAL_FENCE or SYNX_IMPORT_GLOBAL_FENCE, and the
+ *                            fence passed is NULL, then synx_import returns a failure.
  * SYNX_IMPORT_DMA_FENCE    : Import dma fence and create Synx handle for interop.
  *                            Need to pass the dma_fence ptr through fence variable
  *                            if this flag is set. Client must pass:
@@ -87,9 +94,20 @@ enum synx_init_flags {
  *                            b. SYNX_IMPORT_DMA_FENCE|SYNX_IMPORT_GLOBAL_FENCE
  *                               to import a dma fence and create global synx handle
  *                               for interop.
+ *                            If client passes SYNX_IMPORT_DMA_FENCE without specifying
+ *                            SYNX_IMPORT_LOCAL_FENCE or SYNX_IMPORT_GLOBAL_FENCE, and the
+ *                            fence passed is NULL, then synx_import returns a failure.
  * SYNX_IMPORT_EX_RELEASE   : Flag to inform relaxed invocation where release call
  *                            need not be called by client on this handle after import.
  *                            (NOT SUPPORTED)
+ * SYNX_IMPORT_REUSABLE     : Flag to inform that this synx handle supports repeated signaling.
+ *                            Client must pass:
+ *                            a. null ptr through fence variable to create reusable fence
+ *                            b. unsignaled synx handle through fence variable to import
+ *                               reusable fence
+ *                            If client passes SYNX_IMPORT_DMA_FENCE with SYNX_IMPORT_REUSABLE
+ *                            then synx_import returns a failure as reusable fence dosen't
+ *                            have native dma-fence support.
  */
 enum synx_import_flags {
 	SYNX_IMPORT_LOCAL_FENCE  = 0x01,
@@ -97,6 +115,7 @@ enum synx_import_flags {
 	SYNX_IMPORT_SYNX_FENCE   = 0x04,
 	SYNX_IMPORT_DMA_FENCE    = 0x08,
 	SYNX_IMPORT_EX_RELEASE   = 0x10,
+	SYNX_IMPORT_REUSABLE     = 0x20,
 };
 
 /**
@@ -186,26 +205,34 @@ struct synx_register_params {
 };
 
 /**
- * struct synx_queue_desc - Memory descriptor of the queue allocated by
- *                          the fence driver for each client during
- *                          register. (Clients need not pass any pointer
- *                          in synx_initialize_params. It is for future
- *                          use).
+ * struct synx_queue_desc - Memory descriptor of the queue allocated for
+ *                          hw-fence and fence direct clients during
+ *                          initialize. (Synx native clients need not
+ *                          pass any pointer in synx_initialize_params).
  *
- * @vaddr    : CPU virtual address of the queue.
- * @dev_addr : Physical address of the memory object.
- * @size     : Size of the memory.
- * @mem_data : Internal pointer with the attributes of the allocation.
+ * @vaddr         : CPU virtual address of the queue.
+ * @dev_addr      : Physical address of the memory object.
+ * @size          : Size of the memory.
+ * @mem_data      : Internal pointer with the attributes of the allocation.
+ * @base_offset   : Offset for queue base from start of shared memory.
+ * @wr_idx_offset : Offset for write index from start of shared memory.
  */
 struct synx_queue_desc {
 	void *vaddr;
 	u64 dev_addr;
 	u64 size;
 	void *mem_data;
+	u64 base_offset;
+	u64 wr_idx_offset;
 };
 
 /**
  * enum synx_client_id : Unique identifier of the supported clients
+ *
+ * Protocol based Client ID range : 0    - 1023 : Synx Clients
+ *                                : 1024 - 4095 : HW Fence Clients
+ *                                : 4096 - 8191 : Reserved (for future use)
+ *                                : 8192 - 9280 : Fence Direct Clients
  *
  * @SYNX_CLIENT_NATIVE   : Native Client
  * @SYNX_CLIENT_GFX_CTX0 : GFX Client 0
@@ -255,6 +282,23 @@ struct synx_queue_desc {
  * @SYNX_CLIENT_HW_FENCE_TEST2_CTX0 : HW Fence TEST2 Client 0
  * @SYNX_CLIENT_HW_FENCE_TEST3_CTX0 : HW Fence TEST3 Client 0
  * @SYNX_CLIENT_HW_FENCE_TEST4_CTX0 : HW Fence TEST4 Client 0
+ * @SYNX_CLIENT_FENCE_DIRECT_IFE0_CTX0  : Fence Direct IFE0 Client 0
+ * @SYNX_CLIENT_FENCE_DIRECT_IFE1_CTX0  : Fence Direct IFE1 Client 0
+ * @SYNX_CLIENT_FENCE_DIRECT_IFE2_CTX0  : Fence Direct IFE2 Client 0
+ * @SYNX_CLIENT_FENCE_DIRECT_IFE3_CTX0  : Fence Direct IFE3 Client 0
+ * @SYNX_CLIENT_FENCE_DIRECT_IFE4_CTX0  : Fence Direct IFE4 Client 0
+ * @SYNX_CLIENT_FENCE_DIRECT_IFE5_CTX0  : Fence Direct IFE5 Client 0
+ * @SYNX_CLIENT_FENCE_DIRECT_IFE6_CTX0  : Fence Direct IFE6 Client 0
+ * @SYNX_CLIENT_FENCE_DIRECT_IFE7_CTX0  : Fence Direct IFE7 Client 0
+ * @SYNX_CLIENT_FENCE_DIRECT_IFE8_CTX0  : Fence Direct IFE8 Client 0
+ * @SYNX_CLIENT_FENCE_DIRECT_IFE9_CTX0  : Fence Direct IFE9 Client 0
+ * @SYNX_CLIENT_FENCE_DIRECT_IFE10_CTX0 : Fence Direct IFE10 Client 0
+ * @SYNX_CLIENT_FENCE_DIRECT_IFE11_CTX0 : Fence Direct IFE11 Client 0
+ * @SYNX_CLIENT_FENCE_DIRECT_IFE12_CTX0 : Fence Direct IFE12 Client 0
+ * @SYNX_CLIENT_FENCE_DIRECT_IFE13_CTX0 : Fence Direct IFE13 Client 0
+ * @SYNX_CLIENT_FENCE_DIRECT_IFE14_CTX0 : Fence Direct IFE14 Client 0
+ * @SYNX_CLIENT_FENCE_DIRECT_IFE15_CTX0 : Fence Direct IFE15 Client 0
+ * @SYNX_CLIENT_FENCE_DIRECT_TEST_CTX0  : Fence Direct Test Client 0
  */
 enum synx_client_id {
 	SYNX_CLIENT_NATIVE = 0,
@@ -272,6 +316,7 @@ enum synx_client_id {
 	SYNX_CLIENT_ICP_CTX0,
 	SYNX_CLIENT_ICP1_CTX0,
 	SYNX_CLIENT_END,
+	SYNX_HW_FENCE_CLIENT_START = 1024,
 	SYNX_CLIENT_HW_FENCE_GFX_CTX0 = SYNX_HW_FENCE_CLIENT_START,
 	SYNX_CLIENT_HW_FENCE_IPE_CTX0 = SYNX_CLIENT_HW_FENCE_GFX_CTX0 + SYNX_MAX_SIGNAL_PER_CLIENT,
 	SYNX_CLIENT_HW_FENCE_VID_CTX0 = SYNX_CLIENT_HW_FENCE_IPE_CTX0 + SYNX_MAX_SIGNAL_PER_CLIENT,
@@ -336,7 +381,44 @@ enum synx_client_id {
 		SYNX_MAX_SIGNAL_PER_CLIENT,
 	SYNX_CLIENT_HW_FENCE_TEST4_CTX0 = SYNX_CLIENT_HW_FENCE_TEST3_CTX0 +
 		SYNX_MAX_SIGNAL_PER_CLIENT,
-	SYNX_CLIENT_MAX = SYNX_HW_FENCE_CLIENT_END,
+	SYNX_HW_FENCE_CLIENT_END = 4096,
+	SYNX_FENCE_DIRECT_CLIENT_START = 8192,
+	SYNX_CLIENT_FENCE_DIRECT_IFE0_CTX0 = SYNX_FENCE_DIRECT_CLIENT_START,
+	SYNX_CLIENT_FENCE_DIRECT_IFE1_CTX0 = SYNX_CLIENT_FENCE_DIRECT_IFE0_CTX0 +
+		SYNX_MAX_SIGNAL_PER_CLIENT,
+	SYNX_CLIENT_FENCE_DIRECT_IFE2_CTX0 = SYNX_CLIENT_FENCE_DIRECT_IFE1_CTX0 +
+		SYNX_MAX_SIGNAL_PER_CLIENT,
+	SYNX_CLIENT_FENCE_DIRECT_IFE3_CTX0 = SYNX_CLIENT_FENCE_DIRECT_IFE2_CTX0 +
+		SYNX_MAX_SIGNAL_PER_CLIENT,
+	SYNX_CLIENT_FENCE_DIRECT_IFE4_CTX0 = SYNX_CLIENT_FENCE_DIRECT_IFE3_CTX0 +
+		SYNX_MAX_SIGNAL_PER_CLIENT,
+	SYNX_CLIENT_FENCE_DIRECT_IFE5_CTX0 = SYNX_CLIENT_FENCE_DIRECT_IFE4_CTX0 +
+		SYNX_MAX_SIGNAL_PER_CLIENT,
+	SYNX_CLIENT_FENCE_DIRECT_IFE6_CTX0 = SYNX_CLIENT_FENCE_DIRECT_IFE5_CTX0 +
+		SYNX_MAX_SIGNAL_PER_CLIENT,
+	SYNX_CLIENT_FENCE_DIRECT_IFE7_CTX0 = SYNX_CLIENT_FENCE_DIRECT_IFE6_CTX0 +
+		SYNX_MAX_SIGNAL_PER_CLIENT,
+	SYNX_CLIENT_FENCE_DIRECT_IFE8_CTX0 = SYNX_CLIENT_FENCE_DIRECT_IFE7_CTX0 +
+		SYNX_MAX_SIGNAL_PER_CLIENT,
+	SYNX_CLIENT_FENCE_DIRECT_IFE9_CTX0 = SYNX_CLIENT_FENCE_DIRECT_IFE8_CTX0 +
+		SYNX_MAX_SIGNAL_PER_CLIENT,
+	SYNX_CLIENT_FENCE_DIRECT_IFE10_CTX0 = SYNX_CLIENT_FENCE_DIRECT_IFE9_CTX0 +
+		SYNX_MAX_SIGNAL_PER_CLIENT,
+	SYNX_CLIENT_FENCE_DIRECT_IFE11_CTX0 = SYNX_CLIENT_FENCE_DIRECT_IFE10_CTX0 +
+		SYNX_MAX_SIGNAL_PER_CLIENT,
+	SYNX_CLIENT_FENCE_DIRECT_IFE12_CTX0 = SYNX_CLIENT_FENCE_DIRECT_IFE11_CTX0 +
+		SYNX_MAX_SIGNAL_PER_CLIENT,
+	SYNX_CLIENT_FENCE_DIRECT_IFE13_CTX0 = SYNX_CLIENT_FENCE_DIRECT_IFE12_CTX0 +
+		SYNX_MAX_SIGNAL_PER_CLIENT,
+	SYNX_CLIENT_FENCE_DIRECT_IFE14_CTX0 = SYNX_CLIENT_FENCE_DIRECT_IFE13_CTX0 +
+		SYNX_MAX_SIGNAL_PER_CLIENT,
+	SYNX_CLIENT_FENCE_DIRECT_IFE15_CTX0 = SYNX_CLIENT_FENCE_DIRECT_IFE14_CTX0 +
+		SYNX_MAX_SIGNAL_PER_CLIENT,
+	SYNX_CLIENT_FENCE_DIRECT_TEST_CTX0 = SYNX_CLIENT_FENCE_DIRECT_IFE15_CTX0 +
+		SYNX_MAX_SIGNAL_PER_CLIENT,
+	SYNX_FENCE_DIRECT_CLIENT_END = SYNX_CLIENT_FENCE_DIRECT_TEST_CTX0 +
+		SYNX_MAX_SIGNAL_PER_CLIENT,
+	SYNX_CLIENT_MAX = SYNX_FENCE_DIRECT_CLIENT_END,
 };
 
 struct synx_ops;
@@ -393,6 +475,55 @@ struct synx_create_params {
 };
 
 /**
+ *enum synx_release_type - Release params type
+ *
+ * SYNX_RELEASE_INDV_PARAMS : Release filled with synx_release_indv_params struct
+ * SYNX_RELEASE_ARR_PARAMS  : Release filled with synx_release_arr_params struct
+ */
+enum synx_release_type {
+	SYNX_RELEASE_INDV_PARAMS = 0x01,
+	SYNX_RELEASE_ARR_PARAMS  = 0x02,
+};
+
+/**
+ * struct synx_release_indv_params - Synx release indv parameters
+ *
+ * @h_synx      : Synx handle to be released.
+ * @result      : Return value of release of h_synx.
+ *                (filled by the function)
+ */
+struct synx_release_indv_params {
+	uint32_t h_synx;
+	int32_t result;
+};
+
+/**
+ * struct synx_release_arr_params - Synx release arr parameters
+ *
+ * @list      : List of synx_release_indv_params.
+ * @num_objs  : Number of synx handles to be released.
+ */
+struct synx_release_arr_params {
+	struct synx_release_indv_params *list;
+	uint32_t                 num_objs;
+};
+
+/**
+ * struct synx_release_n_params - Synx release_n parameters
+ *
+ * @type     : Release params type filled by client.
+ * @indv     : Params to release an individual handle.
+ * @arr      : Params to release an array of handles.
+ */
+struct synx_release_n_params {
+	enum synx_release_type type;
+	union {
+		struct synx_release_indv_params indv;
+		struct synx_release_arr_params  arr;
+	};
+};
+
+/**
  * enum synx_merge_flags - Handle merge flags
  *
  * SYNX_MERGE_LOCAL_FENCE   : Create local composite synx object. To be passed along
@@ -432,20 +563,70 @@ struct synx_merge_params {
 };
 
 /**
+ * SYNX_MERGE_INDV_PARAMS    : Merge filled with synx_merge_params struct.
+ */
+enum synx_merge_type {
+	SYNX_MERGE_INDV_PARAMS = 0x01,
+};
+
+/**
+ * struct synx_merge_indv_params - Synx merge indv parameters
+ *
+ * @h_synxs          : Pointer to a array of synx handles to be merged.
+ * @flags            : Merge flags.
+ * @num_objs         : Number of synx handles to be merged.
+ * @h_merged_obj     : Pointer to synx object handle passed by client.
+ *                     Created merged synx handle filled by function.
+ * @client_data_hi   : most significant 32 bits of the 64-bit client_data propagated
+ *                     to waiting client during signal. Only supported for fence creation.
+ * @client_data_lo   : least significant 32 bits of the 64-bit client_data propagated
+ *                     to waiting client during signal. Only supported for fence creation.
+ * @security_key_hi  : most significant 32 bits of the 64-bit security_key for authentication.
+ *                     If security_key is not required use SYNX_NO_SECURITY_KEY macro.
+ * @security_key_lo  : least significant 32 bits of the 64-bit security_key for authentication.
+ *                     If security_key is not required use SYNX_NO_SECURITY_KEY macro.
+ */
+struct synx_merge_indv_params {
+	u32 *h_synxs;
+	enum synx_merge_flags flags;
+	u32 num_objs;
+	u32 *h_merged_obj;
+	u32 client_data_hi;
+	u32 client_data_lo;
+	u32 security_key_hi;
+	u32 security_key_lo;
+};
+
+/**
+ * struct synx_merge_n_params - Synx merge parameters
+ *
+ * @type         : Merge params type
+ * @indv         : params to create a single merged handle
+ */
+struct synx_merge_n_params {
+	enum synx_merge_type type;
+	union {
+		struct synx_merge_indv_params indv;
+	};
+};
+
+/**
  * enum synx_import_type - Import type
  *
- * SYNX_IMPORT_INDV_PARAMS : Import filled with synx_import_indv_params struct
- * SYNX_IMPORT_ARR_PARAMS  : Import filled with synx_import_arr_params struct
- * SYNX_IMPORT_INDV_PARAMS_V2 : Import filled with synx_import_indv_params_v2 struct
+ * SYNX_IMPORT_INDV_PARAMS    : Import/Create  filled with synx_import_indv_params struct
+ * SYNX_IMPORT_ARR_PARAMS     : Import/Create  filled with synx_import_arr_params struct
+ * SYNX_IMPORT_INDV_PARAMS_V2 : Import/Create  filled with synx_import_indv_params_v2 struct
+ * SYNX_IMPORT_ARR_PARAMS_V2  : Import/Create  filled with synx_import_arr_params_v2 struct
  */
 enum synx_import_type {
 	SYNX_IMPORT_INDV_PARAMS = 0x01,
 	SYNX_IMPORT_ARR_PARAMS  = 0x02,
 	SYNX_IMPORT_INDV_PARAMS_V2 = 0x03,
+	SYNX_IMPORT_ARR_PARAMS_V2 = 0x04,
 };
 
 /**
- * struct synx_import_indv_params - Synx import indv V2 parameters
+ * struct synx_import_indv_params - Synx import indv parameters
  *
  * @new_h_synxs : Pointer to new synx object
  *                (filled by the function)
@@ -453,7 +634,7 @@ enum synx_import_type {
  *                process for all synx api operations and
  *                for sharing with FW cores.
  * @flags       : Synx import flags
- * @fence       : Pointer to DMA fence fd or synx handle.
+ * @fence       : Pointer to DMA fence fd or synx handle(NULL in case of create).
  */
 struct synx_import_indv_params {
 	u32 *new_h_synx;
@@ -462,30 +643,50 @@ struct synx_import_indv_params {
 };
 
 /**
- * struct synx_import_indv_params_v2 - Synx import indv parameters
+ * struct synx_import_indv_params_v2 - Synx import indv v2 parameters
  *
- * @new_h_synx : Pointer to new synx object
- *                (filled by the function)
- *                The new handle/s should be used by importing
- *                process for all synx api operations and
- *                for sharing with FW cores.
- * @flags       : Synx import flags
- * @fence       : Pointer to DMA fence fd or synx handle, NULL if creating fence
- * @client_data : 64-bit client data propagated to waiting clients during signal,
- *                only supported for fence creation
+ * @new_h_synx       : Pointer to new synx object
+ *                      (filled by the function)
+ *                      The new handle should be used by importing
+ *                      process for all synx api operations and
+ *                      for sharing with FW cores.
+ * @flags            : Synx import flags
+ * @fence            : Pointer to DMA fence fd or synx handle, NULL if creating fence
+ * @client_data_hi   : most significant 32 bits of the 64-bit client_data propagated
+ *                     to waiting client during signal. Only supported for fence creation.
+ * @client_data_lo   : least significant 32 bits of the 64-bit client_data propagated
+ *                     to waiting client during signal. Only supported for fence creation.
+ * @security_key_hi  : most significant 32 bits of the 64-bit security_key for authentication.
+ *                     If security_key is not required use SYNX_NO_SECURITY_KEY macro.
+ * @security_key_lo  : least significant 32 bits of the 64-bit security_key for authentication.
+ *                     If security_key is not required use SYNX_NO_SECURITY_KEY macro.
  */
 struct synx_import_indv_params_v2 {
 	u32 *new_h_synx;
 	enum synx_import_flags flags;
 	void *fence;
-	u64 client_data;
+	u32 client_data_hi;
+	u32 client_data_lo;
+	u32 security_key_hi;
+	u32 security_key_lo;
+};
+
+/**
+ * struct synx_import_arr_params_v2 - Synx import arr v2 parameters
+ *
+ * @list        : List of synx_import_indv_params_v2 params
+ * @num_fences  : Number of fences or synx handles to be imported/created
+ */
+struct synx_import_arr_params_v2 {
+	struct synx_import_indv_params_v2 *list;
+	u32 num_fences;
 };
 
 /**
  * struct synx_import_arr_params - Synx import arr parameters
  *
  * @list        : List of synx_import_indv_params
- * @num_fences  : Number of fences or synx handles to be imported
+ * @num_fences  : Number of fences or synx handles to be imported/created
  */
 struct synx_import_arr_params {
 	struct synx_import_indv_params *list;
@@ -495,9 +696,11 @@ struct synx_import_arr_params {
 /**
  * struct synx_import_params - Synx import parameters
  *
- * @type : Import params type filled by client
- * @indv : Params to import an individual handle or fence
- * @arr  : Params to import an array of handles or fences
+ * @type    : Import/Create params type filled by client
+ * @indv    : Params to import/create an individual handle or fence
+ * @arr     : Params to import/create an array of handles or fences
+ * @indv_v2 : Params to import/create an individual handle or fence of v2 params
+ * @arr_v2  : Params to import/create an array of handles or fences of v2 params
  */
 struct synx_import_params {
 	enum synx_import_type type;
@@ -505,6 +708,7 @@ struct synx_import_params {
 		struct synx_import_indv_params indv;
 		struct synx_import_arr_params  arr;
 		struct synx_import_indv_params_v2 indv_v2;
+		struct synx_import_arr_params_v2 arr_v2;
 	};
 };
 
@@ -700,6 +904,8 @@ struct synx_get_params {
  * @get_fence           : gets native fence backing synx object
  * @release             : releases synx object
  * @get                 : gets information associated with synx object
+ * @release_n           : releases an array of synx objects
+ * @merge_n             : merges multiple synx objects with merge_n params
  */
 struct synx_ops {
 	int (*uninitialize)(struct synx_session *session);
@@ -716,6 +922,8 @@ struct synx_ops {
 	void *(*get_fence)(struct synx_session *session, u32 h_synx);
 	int (*release)(struct synx_session *session, u32 h_synx);
 	int (*get)(struct synx_session *session, struct synx_get_params *params);
+	int (*release_n)(struct synx_session *session, struct synx_release_n_params *params);
+	int (*merge_n)(struct synx_session *session, struct synx_merge_n_params *params);
 };
 
 /* Kernel APIs */
@@ -848,6 +1056,18 @@ int synx_signal_n(struct synx_session *session, struct synx_signal_n_params *par
 int synx_merge(struct synx_session *session, struct synx_merge_params *params);
 
 /**
+ * synx_merge_n - Merges multiple synx objects with synx_merge_n params
+ *
+ * This function will merge multiple synx objects into a synx group based on synx_merge_type.
+ *
+ * @param session : Session ptr (returned from synx_initialize)
+ * @param params  : Merge_n params
+ *
+ * @return Status of operation. Negative in case of error. SYNX_SUCCESS otherwise.
+ */
+int synx_merge_n(struct synx_session *session, struct synx_merge_n_params *params);
+
+/**
  * synx_wait - Waits for a synx object synchronously
  *
  * Does a wait on the synx object identified by h_synx for a maximum
@@ -891,7 +1111,8 @@ int synx_read_n(struct synx_session *session, struct synx_read_n_params *params)
 int synx_get_status(struct synx_session *session, u32 h_synx);
 
 /**
- * synx_import - Imports (looks up) synx object from given handle or fence
+ * synx_import - Imports (looks up) synx object from given handle or fence,
+ * or creates a new handle if the fence passed is NULL.
  * *
  * @param session : Session ptr (returned from synx_initialize)
  * @param params  : Pointer to import params
@@ -924,6 +1145,21 @@ void *synx_get_fence(struct synx_session *session, u32 h_synx);
  * @return Status of operation. Negative in case of error. SYNX_SUCCESS otherwise.
  */
 int synx_release(struct synx_session *session, u32 h_synx);
+
+/**
+ * @brief: Releases a list of synx objects.
+ *         Every created, imported or merged synx object should be
+ *         released.
+ *
+ * @param pSession   : Session ptr (returned from synx_initialize)
+ * @param pParams    : pointer to release params
+ *
+ * @return Status of operation. Negative if at least one of the handle release failed,
+ * SYNX_SUCCESS otherwise. This API will continue to release rest of the handles,
+ * even if release of some of the handles in the list failed. The status of individual
+ * failure can be seen in the result member of the structure synx_release_indv_params.
+ */
+int synx_release_n(struct synx_session *pSession, struct synx_release_n_params *pParams);
 
 /**
  * synx_recover - Recover any possible handle leaks

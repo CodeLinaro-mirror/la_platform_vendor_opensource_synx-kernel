@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef __SYNX_PRIVATE_H__
@@ -48,6 +48,11 @@
 #define SYNX_MAX_REF_COUNTS         100
 
 #define IS_HW_FENCE(hw_fence) (hw_fence & SYNX_HW_FENCE_HANDLE_FLAG)
+
+enum synx_queue_mem_type {
+	SYNX_MEM_DEFAULT = 0x00,
+	SYNX_MEM_MAX,
+};
 
 struct synx_bind_desc {
 	struct synx_external_desc_v2 external_desc;
@@ -104,6 +109,11 @@ struct synx_timer_cb_data {
 	struct synx_session *session;
 	struct synx_cb_data *synx_cb;
 	u32 h_synx;
+	struct work_struct cb_dispatch;
+};
+
+struct synx_fence_enable_data {
+	struct dma_fence *fence;
 	struct work_struct cb_dispatch;
 };
 
@@ -168,6 +178,9 @@ struct synx_coredata {
 	u32 global_idx;
 	u32 map_count;
 	struct synx_signal_cb *signal_cb;
+#if defined(CONFIG_EXTENSIBLE_GLCOREDATA)
+	u64 security_key;
+#endif
 };
 
 struct synx_client;
@@ -185,7 +198,7 @@ struct synx_handle_coredata {
 };
 
 struct synx_client {
-	u32 type;
+	struct synx_session session;
 	bool active;
 	struct synx_device *device;
 	char name[SYNX_OBJ_NAME_LEN];
@@ -239,6 +252,7 @@ struct synx_device {
 };
 
 extern struct synx_ops synx_hwfence_ops;
+extern struct synx_ops synx_internal_ops;
 
 int synx_signal_core(struct synx_coredata *synx_obj,
 	u32 status,
@@ -273,6 +287,8 @@ int synx_internal_signal(struct synx_session *session, u32 h_synx,
 
 int synx_internal_merge(struct synx_session *session, struct synx_merge_params *params);
 
+int synx_internal_merge_n(struct synx_session *session, struct synx_merge_n_params *params);
+
 int synx_internal_wait(struct synx_session *session, u32 h_synx, u64 timeout_ms);
 
 int synx_internal_get_status(struct synx_session *session, u32 h_synx);
@@ -282,6 +298,8 @@ int synx_internal_import(struct synx_session *session, struct synx_import_params
 void *synx_internal_get_fence(struct synx_session *session, u32 h_synx);
 
 int synx_internal_release(struct synx_session *session, u32 h_synx);
+
+int synx_internal_release_n(struct synx_session *session, struct synx_release_n_params *params);
 
 int synx_internal_recover(enum synx_client_id id);
 
