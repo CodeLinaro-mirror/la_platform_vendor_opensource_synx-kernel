@@ -1006,7 +1006,7 @@ static void ipcmem_init(struct ipclite_mem *ipcmem)
 	IPCLITE_OS_LOG(IPCLITE_DBG, "Ipcmem init completed\n");
 }
 
-
+#if  (KERNEL_VERSION(6, 1, 0) > LINUX_VERSION_CODE)
 /*Add VMIDs corresponding to EVA, CDSP and VPU to set IPCMEM access control*/
 static int set_ipcmem_access_control(struct ipclite_info *ipclite)
 {
@@ -1041,6 +1041,7 @@ static int set_ipcmem_access_control(struct ipclite_info *ipclite)
 
 	return ret;
 }
+#endif
 
 static int ipclite_channel_irq_init(struct device *parent, struct device_node *node,
 								struct ipclite_channel *channel)
