@@ -70,11 +70,6 @@ void synx_fence_enable_handler(struct work_struct *cb_dispatch)
 	struct synx_map_entry *entry;
 	struct synx_coredata *synx_obj;
 
-	if (dma_fence_is_array(fence)) {
-		dprintk(SYNX_ERR, "dma fence array is not expected\n");
-		return;
-	}
-
 	h_synx = synx_util_get_fence_entry((u64)fence, true);
 	dprintk(SYNX_DBG, "trying to mark core as waiter fence %pK h_synx %u\n",
 		fence, h_synx);
@@ -87,6 +82,12 @@ void synx_fence_enable_handler(struct work_struct *cb_dispatch)
 			return;
 		}
 		synx_obj = entry->synx_obj;
+
+		if (dma_fence_is_array(fence)) {
+			dprintk(SYNX_ERR, "dma fence array is not expected\n");
+			synx_util_release_map_entry(entry);
+			return;
+		}
 
 		idx = h_synx & SYNX_HANDLE_INDEX_MASK;
 		if (!synx_is_valid_idx(idx)) {
