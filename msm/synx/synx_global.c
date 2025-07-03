@@ -168,7 +168,7 @@ int synx_global_dump_shared_memory(void)
 	return rc;
 }
 
-static int synx_gmem_init(void)
+int synx_gmem_init(void)
 {
 	if (!synx_gmem.table) {
 		dprintk(SYNX_ERR, "synx_gmem is NULL\n");
@@ -197,7 +197,7 @@ int synx_global_free_synx_hwlock(void)
 	if (!get_ipclite_feature(IPCLITE_GLOBAL_LOCK)) {
 		if (!synx_hwlock) {
 			dprintk(SYNX_ERR, "hwspinlock is NULL\n");
-			return -SYNX_NOMEM;
+			return -SYNX_INVALID;
 		}
 		hwspin_lock_free(synx_hwlock);
 	}
@@ -249,7 +249,7 @@ int synx_global_memory_is_empty(void)
 
 	while (index < size) {
 		dprintk(SYNX_MEM, "global index being used %d\n", index);
-		synx_g_obj = &synx_gmem.table[index];
+		synx_g_obj = synx_fetch_global_coredata_object(index);
 		synx_global_print_data(synx_g_obj, __func__);
 		index = find_next_bit((unsigned long *)(synx_gmem.bitmap),
 				size, index + 1);
