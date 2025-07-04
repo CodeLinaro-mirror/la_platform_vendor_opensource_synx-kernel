@@ -2974,6 +2974,8 @@ static int synx_handle_import_v2(struct synx_private_ioctl_arg *k_ioctl,
 	params.indv_v2.new_h_synx = &import_info_v2.new_synx_obj;
 	params.indv_v2.security_key_hi = import_info_v2.security_key_hi;
 	params.indv_v2.security_key_lo = import_info_v2.security_key_lo;
+	params.indv_v2.client_data_hi = import_info_v2.client_data_hi;
+	params.indv_v2.client_data_lo = import_info_v2.client_data_lo;
 
 	if (synx_import(session, &params))
 		result = -SYNX_INVALID;
@@ -3116,6 +3118,8 @@ static int synx_handle_import_arr_v2(
 		params.indv_v2.flags = arr_v2[idx].flags;
 		params.indv_v2.security_key_hi = arr_v2[idx].security_key_hi;
 		params.indv_v2.security_key_lo = arr_v2[idx].security_key_lo;
+		params.indv_v2.client_data_hi = arr_v2[idx].client_data_hi;
+		params.indv_v2.client_data_lo = arr_v2[idx].client_data_lo;
 
 		if (arr_v2[idx].flags & SYNX_IMPORT_DMA_FENCE) {
 			if (arr_v2[idx].desc.id[0] == 0) {
