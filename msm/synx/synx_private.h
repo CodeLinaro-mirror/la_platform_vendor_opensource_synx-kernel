@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef __SYNX_PRIVATE_H__
@@ -112,6 +112,11 @@ struct synx_timer_cb_data {
 	struct work_struct cb_dispatch;
 };
 
+struct synx_fence_enable_data {
+	struct dma_fence *fence;
+	struct work_struct cb_dispatch;
+};
+
 struct synx_cb_data {
 	struct synx_session *session;
 	u32 idx;
@@ -173,6 +178,9 @@ struct synx_coredata {
 	u32 global_idx;
 	u32 map_count;
 	struct synx_signal_cb *signal_cb;
+#if defined(CONFIG_EXTENSIBLE_GLCOREDATA)
+	u64 security_key;
+#endif
 };
 
 struct synx_client;
@@ -278,6 +286,8 @@ int synx_internal_signal(struct synx_session *session, u32 h_synx,
 	enum synx_signal_status status);
 
 int synx_internal_merge(struct synx_session *session, struct synx_merge_params *params);
+
+int synx_internal_merge_n(struct synx_session *session, struct synx_merge_n_params *params);
 
 int synx_internal_wait(struct synx_session *session, u32 h_synx, u64 timeout_ms);
 

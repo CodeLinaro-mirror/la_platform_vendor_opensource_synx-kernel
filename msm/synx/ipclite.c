@@ -15,6 +15,7 @@
 #include <linux/of_irq.h>
 #include <asm/memory.h>
 #include <linux/sizes.h>
+#include <linux/suspend.h>
 
 #include <linux/hwspinlock.h>
 
@@ -31,11 +32,26 @@ static struct ipclite_debug_struct *ipclite_dbg_struct;
 static struct ipclite_debug_inmem_buf *ipclite_dbg_inmem;
 static struct mutex ssr_mutex;
 static struct kobject *sysfs_kobj;
+static bool debug_status = false;
 
 static uint32_t ipclite_debug_level = IPCLITE_ERR | IPCLITE_WARN | IPCLITE_INFO;
 static uint32_t ipclite_debug_control = IPCLITE_OS_LOG, ipclite_debug_dump;
 static uint32_t enabled_hosts, major_ver, minor_ver;
 static uint64_t feature_mask;
+
+static inline int is_feature_config(uint32_t ipclite_feature)
+{
+	return feature_mask & ipclite_feature;
+}
+
+static inline int is_debug_config(uint32_t ipclite_debug)
+{
+	if (!debug_status) {
+		pr_err("debug setup not initialized.");
+		return 0;
+	}
+	return ipclite_debug_control & ipclite_debug;
+}
 
 static inline bool is_host_enabled(uint32_t host)
 {
@@ -51,6 +67,11 @@ static void ipclite_inmem_log(const char *psztStr, ...)
 {
 	uint32_t local_index = 0;
 	va_list pArgs;
+
+	if (!debug_status) {
+		pr_err("debug setup not initialized.");
+		return;
+	}
 
 	va_start(pArgs, psztStr);
 
@@ -70,14 +91,8 @@ static void ipclite_dump_debug_struct(void)
 	int i = 0, host = 0;
 	struct ipclite_debug_struct *temp_dbg_struct;
 
-	/* Check if debug structures are initialized */
-	if (!ipclite_dbg_info || !ipclite_dbg_struct) {
-		pr_err("Debug Structures not initialized\n");
-		return;
-	}
-
 	/* Check if debug structures are enabled before printing */
-	if (!(IS_DEBUG_CONFIG(IPCLITE_DBG_STRUCT))) {
+	if (!(is_debug_config(IPCLITE_DBG_STRUCT))) {
 		pr_err("Debug Structures not enabled\n");
 		return;
 	}
@@ -141,14 +156,8 @@ static void ipclite_dump_inmem_logs(void)
 	int i = 0;
 	uint32_t local_index = 0;
 
-	/* Check if debug and inmem structures are initialized */
-	if (!ipclite_dbg_info || !ipclite_dbg_inmem) {
-		pr_err("Debug structures not initialized\n");
-		return;
-	}
-
 	/* Check if debug structures are enabled before printing */
-	if (!(IS_DEBUG_CONFIG(IPCLITE_INMEM_LOG))) {
+	if (!(is_debug_config(IPCLITE_INMEM_LOG))) {
 		pr_err("In-Memory Logs not enabled\n");
 		return;
 	}
@@ -518,7 +527,7 @@ static void ipcmem_rx_advance(struct ipclite_fifo *rx_fifo,
 	*rx_fifo->tail = cpu_to_le32(tail);
 
 	/* Storing the debug data in debug structures */
-	if (IS_DEBUG_CONFIG(IPCLITE_DBG_STRUCT)) {
+	if (is_debug_config(IPCLITE_DBG_STRUCT)) {
 		ipclite_dbg_struct->dbg_info_host[core_id].prev_rx_wr_index[1] =
 				ipclite_dbg_struct->dbg_info_host[core_id].prev_rx_wr_index[0];
 		ipclite_dbg_struct->dbg_info_host[core_id].prev_rx_wr_index[0] =
@@ -603,7 +612,7 @@ static void ipcmem_tx_write(struct ipclite_fifo *tx_fifo,
 						*tx_fifo->head, core_id, signal_id);
 
 	/* Storing the debug data in debug structures */
-	if (IS_DEBUG_CONFIG(IPCLITE_DBG_STRUCT)) {
+	if (is_debug_config(IPCLITE_DBG_STRUCT)) {
 		ipclite_dbg_struct->dbg_info_host[core_id].prev_tx_wr_index[1] =
 				ipclite_dbg_struct->dbg_info_host[core_id].prev_tx_wr_index[0];
 		ipclite_dbg_struct->dbg_info_host[core_id].prev_tx_wr_index[0] =
@@ -739,7 +748,7 @@ static irqreturn_t ipclite_intr(int irq, void *data)
 							channel->remote_pid, irq_info->signal_id);
 
 	/* Storing the debug data in debug structures */
-	if (IS_DEBUG_CONFIG(IPCLITE_DBG_STRUCT)) {
+	if (is_debug_config(IPCLITE_DBG_STRUCT)) {
 		ipclite_dbg_struct->dbg_info_host[channel->remote_pid].num_intr++;
 		ipclite_dbg_struct->dbg_info_overall.last_recv_host_id = channel->remote_pid;
 		ipclite_dbg_struct->dbg_info_overall.last_sigid_recv = irq_info->signal_id;
@@ -1364,8 +1373,8 @@ static ssize_t ipclite_dbg_lvl_write(struct kobject *kobj,
 	}
 
 	/* Check if debug structure is initialized */
-	if (!ipclite_dbg_info) {
-		IPCLITE_LOG(ERR, "Debug structures not initialized\n");
+	if (!debug_status) {
+		pr_err("debug setup not initialized.");
 		return -ENOMEM;
 	}
 
@@ -1402,8 +1411,8 @@ static ssize_t ipclite_dbg_ctrl_write(struct kobject *kobj,
 	}
 
 	/* Check if debug structures are initialized */
-	if (!ipclite_dbg_info || !ipclite_dbg_struct || !ipclite_dbg_inmem) {
-		IPCLITE_LOG(ERR, "Debug structures not initialized\n");
+	if (!debug_status) {
+		pr_err("debug setup not initialized.");
 		return -ENOMEM;
 	}
 
@@ -1440,8 +1449,8 @@ static ssize_t ipclite_dbg_dump_write(struct kobject *kobj,
 	}
 
 	/* Check if debug structures are initialized */
-	if (!ipclite_dbg_info || !ipclite_dbg_struct || !ipclite_dbg_inmem) {
-		IPCLITE_LOG(ERR, "Debug structures not initialized\n");
+	if (!debug_status) {
+		pr_err("debug setup not initialized.");
 		return -ENOMEM;
 	}
 
@@ -1515,6 +1524,7 @@ static int ipclite_debug_mem_setup(void)
 
 	if (!ipclite_dbg_inmem)
 		return -EADDRNOTAVAIL;
+	debug_status = true;
 
 	IPCLITE_LOG(LOW, "virtual_base_ptr = %p total_size : %d debug_size : %d\n",
 		ipclite->ipcmem.mem.virt_base, ipclite->ipcmem.mem.size, DEBUG_PARTITION_SIZE);
@@ -1573,20 +1583,36 @@ static int ipclite_feature_setup(struct device_node *pn)
 	feature_mask = (uint64_t) feature_mask_h << 32 | feature_mask_l;
 
 	/* Set up Global Atomics Feature*/
-	if (!(IS_FEATURE_CONFIG(IPCLITE_GLOBAL_ATOMIC)))
+	if (!(is_feature_config(IPCLITE_GLOBAL_ATOMIC)))
 		IPCLITE_LOG(INFO, "IPCLite Global Atomic Support Disabled\n");
 
 	/* Set up Test Suite Feature*/
-	if (!(IS_FEATURE_CONFIG(IPCLITE_TEST_SUITE)))
+	if (!(is_feature_config(IPCLITE_TEST_SUITE)))
 		IPCLITE_LOG(INFO, "IPCLite Test Suite Disabled\n");
 
 	/* Set up ipclite atomic Feature*/
-	if (!(IS_FEATURE_CONFIG(IPCLITE_GLOBAL_LOCK)))
+	if (!(is_feature_config(IPCLITE_GLOBAL_LOCK)))
 		IPCLITE_LOG(INFO, "IPCLite Atomic Support Disabled\n");
 
 	return ret;
 }
 /* IPCLite Features setup related functions end */
+
+static int ipclite_init_signal_broadcast(void)
+{
+	int ret = 0;
+	struct ipclite_channel broadcast = ipclite->channel[IPCMEM_APPS];
+	struct mbox_chan *mbox_chan = broadcast.irq_info[IPCLITE_MEM_INIT_SIGNAL].mbox_chan;
+
+	if (ipclite->channel[IPCMEM_APPS].status == ACTIVE) {
+		ret = mbox_send_message(mbox_chan, NULL);
+		if (ret < 0)
+			return ret;
+
+		mbox_client_txdone(mbox_chan, 0);
+	}
+	return ret;
+}
 
 /* API Definition Start - Minor Version 0*/
 static int ipclite_init_v0(struct platform_device *pdev)
@@ -1595,7 +1621,6 @@ static int ipclite_init_v0(struct platform_device *pdev)
 	struct ipcmem_region *mem;
 	struct device_node *cn;
 	struct device_node *pn = pdev->dev.of_node;
-	struct ipclite_channel broadcast;
 
 	/* Allocate memory for IPCLite */
 	ipclite = kzalloc(sizeof(*ipclite), GFP_KERNEL);
@@ -1659,14 +1684,10 @@ static int ipclite_init_v0(struct platform_device *pdev)
 	}
 
 	/* Broadcast init_done signal to all subsystems once mbox channels are set up */
-	if (ipclite->channel[IPCMEM_APPS].status == ACTIVE) {
-		broadcast = ipclite->channel[IPCMEM_APPS];
-		ret = mbox_send_message(broadcast.irq_info[IPCLITE_MEM_INIT_SIGNAL].mbox_chan, NULL);
-		if (ret < 0)
-			goto mem_release;
+	ret = ipclite_init_signal_broadcast();
 
-		mbox_client_txdone(broadcast.irq_info[IPCLITE_MEM_INIT_SIGNAL].mbox_chan, 0);
-	}
+	if (ret < 0)
+		goto mem_release;
 
 	/* Debug Setup */
 	ret = ipclite_debug_setup();
@@ -2059,8 +2080,6 @@ error:
 
 static int ipclite_driver_freeze(struct device *dev)
 {
-	IPCLITE_LOG(MED, "Entered ipclite hibernate\n");
-
 	if (unlikely(!ipclite)) {
 		pr_err("ipclite not initialized\n");
 		return -ENOMEM;
@@ -2068,13 +2087,14 @@ static int ipclite_driver_freeze(struct device *dev)
 
 	ipclite->ipcmem.init_status = false;
 	kfree(ipclite->ipcmem.partition);
+
+	IPCLITE_LOG(MED, "Entered ipclite hibernate successfully\n");
 	return 0;
 }
 
 static int ipclite_driver_restore(struct device *dev)
 {
-	int ret = 0;
-	struct ipclite_channel broadcast;
+	int ret = 0, res = 0;
 	struct platform_device *pdev = container_of(dev, struct platform_device, dev);
 	struct device_node *pn = pdev->dev.of_node;
 
@@ -2094,15 +2114,10 @@ static int ipclite_driver_restore(struct device *dev)
 	ipclite_update_channel_status();
 
 	/* Broadcast init_done signal to all subsystems once mbox channels are set up */
-	if (ipclite->channel[IPCMEM_APPS].status == ACTIVE) {
-		broadcast = ipclite->channel[IPCMEM_APPS];
-		ret = mbox_send_message(broadcast.irq_info[IPCLITE_MEM_INIT_SIGNAL].mbox_chan,
-								NULL);
-		if (ret < 0) {
-			IPCLITE_LOG(ERR, "Failed to broadcast ipclite mem init signal");
-			return ret;
-		}
-		mbox_client_txdone(broadcast.irq_info[IPCLITE_MEM_INIT_SIGNAL].mbox_chan, 0);
+	res = ipclite_init_signal_broadcast();
+	if (res < 0) {
+		IPCLITE_LOG(ERR, "Failed to broadcast ipclite mem init signal");
+		return res;
 	}
 
 	/* Update the Global Debug variable for FW cores */
@@ -2113,7 +2128,70 @@ static int ipclite_driver_restore(struct device *dev)
 	return ret;
 }
 
-static const struct dev_pm_ops ipclite_hibernate_pm_ops = {
+static int ipclite_driver_suspend(struct device *dev)
+{
+	if (pm_suspend_target_state == PM_SUSPEND_MEM) {
+		if (unlikely(!ipclite)) {
+			pr_err("ipclite not initialized\n");
+			return -ENOMEM;
+		}
+
+		ipclite->ipcmem.init_status = false;
+
+		IPCLITE_LOG(MED, "Entered ipclite deep sleep successfully\n");
+	} else {
+		IPCLITE_LOG(MED, "Entered ipclite suspend successfully\n");
+	}
+	return 0;
+}
+
+static int ipclite_driver_resume(struct device *dev)
+{
+	int ret = 0, res = 0;
+
+	if (pm_suspend_target_state == PM_SUSPEND_MEM) {
+		if (unlikely(!ipclite)) {
+			pr_err("ipclite not initialized\n");
+			return -ENOMEM;
+		}
+
+		for (int p = 0; p < ipclite->ipcmem.num_partitions; p++) {
+			ipclite_global_atomic_store_i32((ipclite_atomic_int32_t *)
+				(&(ipclite->ipcmem.partition[p]->hdr.status)), 0);
+		}
+
+		ipclite_update_channel_status();
+
+		for (int remote_pid = 0; remote_pid < IPCMEM_NUM_HOSTS; remote_pid++) {
+			if (!is_host_enabled(remote_pid))
+				continue;
+			*(ipclite->channel[remote_pid].tx_fifo->head) = 0;
+			*(ipclite->channel[remote_pid].rx_fifo->tail) = 0;
+		}
+
+		if (get_ipclite_feature(IPCLITE_GLOBAL_LOCK)) {
+			memset(ipclite->gl_lock_table->global_lock, 0,
+				IPCLITE_MAX_GLOBAL_LOCK * sizeof(uint32_t));
+		}
+
+		ipclite->ipcmem.init_status = true;
+
+		res = ipclite_init_signal_broadcast();
+		if (res < 0) {
+			IPCLITE_LOG(ERR, "Failed to broadcast ipclite mem init signal");
+			return res;
+		}
+
+		IPCLITE_LOG(MED, "Exited ipclite deep sleep successfully\n");
+	} else {
+		IPCLITE_LOG(MED, "Resumed from ipclite suspend successfully\n");
+	}
+	return ret;
+}
+
+static const struct dev_pm_ops ipclite_pm_ops = {
+	.suspend = ipclite_driver_suspend,
+	.resume = ipclite_driver_resume,
 	.freeze = ipclite_driver_freeze,
 	.restore = ipclite_driver_restore,
 };
@@ -2129,7 +2207,7 @@ static struct platform_driver ipclite_driver = {
 	.driver = {
 		.name = "ipclite",
 		.of_match_table = ipclite_of_match,
-		.pm = &ipclite_hibernate_pm_ops,
+		.pm = &ipclite_pm_ops,
 	},
 };
 

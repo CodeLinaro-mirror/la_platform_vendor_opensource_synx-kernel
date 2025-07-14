@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2023-2025, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/types.h>
@@ -20,6 +20,7 @@ struct synx_ops synx_hwfence_ops = {
 	.import = NULL,
 	.get_status = NULL,
 	.merge = NULL,
+	.merge_n = NULL,
 	.wait = NULL,
 	.cancel_async_wait = NULL,
 	.get = NULL
@@ -36,6 +37,7 @@ struct synx_ops synx_internal_ops = {
 	.import = NULL,
 	.get_status = NULL,
 	.merge = NULL,
+	.merge_n = NULL,
 	.wait = NULL,
 	.cancel_async_wait = NULL,
 	.get = NULL
@@ -186,6 +188,16 @@ int synx_merge(struct synx_session *session, struct synx_merge_params *params)
 	return session->ops->merge(session, params);
 }
 EXPORT_SYMBOL(synx_merge);
+
+int synx_merge_n(struct synx_session *session, struct synx_merge_n_params *params)
+{
+	if (IS_ERR_OR_NULL(session) || !session->ops || !session->ops->merge_n) {
+		dprintk(SYNX_ERR, "invalid session\n");
+		return -SYNX_INVALID;
+	}
+	return session->ops->merge_n(session, params);
+}
+EXPORT_SYMBOL_GPL(synx_merge_n);
 
 int synx_wait(struct synx_session *session, u32 h_synx, u64 timeout_ms)
 {
