@@ -15,6 +15,7 @@ register_synx_module(
         "synx/synx_debugfs.c",
         "synx/synx_debugfs_util.c",
         "synx/synx_compat.c",
+        "synx/synx_test_ioctl.c",
     ],
 
     # Configs are handled by config_options = []

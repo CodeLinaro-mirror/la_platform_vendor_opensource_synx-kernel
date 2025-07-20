@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2019, 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef __SYNX_API_H__
@@ -21,6 +21,12 @@
  */
 #define SYNX_INVALID_HANDLE 0
 #define SYNX_MAX_SIGNAL_PER_CLIENT 64
+
+/**
+* SYNX_NO_SECURITY_KEY     : No security key is associated with Synx obj
+*/
+#define SYNX_NO_SECURITY_KEY 0
+
 /* synx object states */
 #define SYNX_STATE_INVALID             0    // Invalid synx object
 #define SYNX_STATE_ACTIVE              1    // Synx object has not been signaled
@@ -199,22 +205,25 @@ struct synx_register_params {
 };
 
 /**
- * struct synx_queue_desc - Memory descriptor of the queue allocated by
- *                          the fence driver for each client during
- *                          register. (Clients need not pass any pointer
- *                          in synx_initialize_params. It is for future
- *                          use).
+ * struct synx_queue_desc - Memory descriptor of the queue allocated for
+ *                          hw-fence and fence direct clients during
+ *                          initialize. (Synx native clients need not
+ *                          pass any pointer in synx_initialize_params).
  *
- * @vaddr    : CPU virtual address of the queue.
- * @dev_addr : Physical address of the memory object.
- * @size     : Size of the memory.
- * @mem_data : Internal pointer with the attributes of the allocation.
+ * @vaddr         : CPU virtual address of the queue.
+ * @dev_addr      : Physical address of the memory object.
+ * @size          : Size of the memory.
+ * @mem_data      : Internal pointer with the attributes of the allocation.
+ * @base_offset   : Offset for queue base from start of shared memory.
+ * @wr_idx_offset : Offset for write index from start of shared memory.
  */
 struct synx_queue_desc {
 	void *vaddr;
 	u64 dev_addr;
 	u64 size;
 	void *mem_data;
+	u64 base_offset;
+	u64 wr_idx_offset;
 };
 
 /**
@@ -554,20 +563,70 @@ struct synx_merge_params {
 };
 
 /**
+ * SYNX_MERGE_INDV_PARAMS    : Merge filled with synx_merge_params struct.
+ */
+enum synx_merge_type {
+	SYNX_MERGE_INDV_PARAMS = 0x01,
+};
+
+/**
+ * struct synx_merge_indv_params - Synx merge indv parameters
+ *
+ * @h_synxs          : Pointer to a array of synx handles to be merged.
+ * @flags            : Merge flags.
+ * @num_objs         : Number of synx handles to be merged.
+ * @h_merged_obj     : Pointer to synx object handle passed by client.
+ *                     Created merged synx handle filled by function.
+ * @client_data_hi   : most significant 32 bits of the 64-bit client_data propagated
+ *                     to waiting client during signal. Only supported for fence creation.
+ * @client_data_lo   : least significant 32 bits of the 64-bit client_data propagated
+ *                     to waiting client during signal. Only supported for fence creation.
+ * @security_key_hi  : most significant 32 bits of the 64-bit security_key for authentication.
+ *                     If security_key is not required use SYNX_NO_SECURITY_KEY macro.
+ * @security_key_lo  : least significant 32 bits of the 64-bit security_key for authentication.
+ *                     If security_key is not required use SYNX_NO_SECURITY_KEY macro.
+ */
+struct synx_merge_indv_params {
+	u32 *h_synxs;
+	enum synx_merge_flags flags;
+	u32 num_objs;
+	u32 *h_merged_obj;
+	u32 client_data_hi;
+	u32 client_data_lo;
+	u32 security_key_hi;
+	u32 security_key_lo;
+};
+
+/**
+ * struct synx_merge_n_params - Synx merge parameters
+ *
+ * @type         : Merge params type
+ * @indv         : params to create a single merged handle
+ */
+struct synx_merge_n_params {
+	enum synx_merge_type type;
+	union {
+		struct synx_merge_indv_params indv;
+	};
+};
+
+/**
  * enum synx_import_type - Import type
  *
- * SYNX_IMPORT_INDV_PARAMS : Import/Create  filled with synx_import_indv_params struct
- * SYNX_IMPORT_ARR_PARAMS  : Import/Create  filled with synx_import_arr_params struct
- * SYNX_IMPORT_INDV_PARAMS_V2 : Import filled with synx_import_indv_params_v2 struct
+ * SYNX_IMPORT_INDV_PARAMS    : Import/Create  filled with synx_import_indv_params struct
+ * SYNX_IMPORT_ARR_PARAMS     : Import/Create  filled with synx_import_arr_params struct
+ * SYNX_IMPORT_INDV_PARAMS_V2 : Import/Create  filled with synx_import_indv_params_v2 struct
+ * SYNX_IMPORT_ARR_PARAMS_V2  : Import/Create  filled with synx_import_arr_params_v2 struct
  */
 enum synx_import_type {
 	SYNX_IMPORT_INDV_PARAMS = 0x01,
 	SYNX_IMPORT_ARR_PARAMS  = 0x02,
 	SYNX_IMPORT_INDV_PARAMS_V2 = 0x03,
+	SYNX_IMPORT_ARR_PARAMS_V2 = 0x04,
 };
 
 /**
- * struct synx_import_indv_params - Synx import indv V2 parameters
+ * struct synx_import_indv_params - Synx import indv parameters
  *
  * @new_h_synxs : Pointer to new synx object
  *                (filled by the function)
@@ -584,23 +643,43 @@ struct synx_import_indv_params {
 };
 
 /**
- * struct synx_import_indv_params_v2 - Synx import indv parameters
+ * struct synx_import_indv_params_v2 - Synx import indv v2 parameters
  *
- * @new_h_synx : Pointer to new synx object
- *                (filled by the function)
- *                The new handle/s should be used by importing
- *                process for all synx api operations and
- *                for sharing with FW cores.
- * @flags       : Synx import flags
- * @fence       : Pointer to DMA fence fd or synx handle, NULL if creating fence
- * @client_data : 64-bit client data propagated to waiting clients during signal,
- *                only supported for fence creation
+ * @new_h_synx       : Pointer to new synx object
+ *                      (filled by the function)
+ *                      The new handle should be used by importing
+ *                      process for all synx api operations and
+ *                      for sharing with FW cores.
+ * @flags            : Synx import flags
+ * @fence            : Pointer to DMA fence fd or synx handle, NULL if creating fence
+ * @client_data_hi   : most significant 32 bits of the 64-bit client_data propagated
+ *                     to waiting client during signal. Only supported for fence creation.
+ * @client_data_lo   : least significant 32 bits of the 64-bit client_data propagated
+ *                     to waiting client during signal. Only supported for fence creation.
+ * @security_key_hi  : most significant 32 bits of the 64-bit security_key for authentication.
+ *                     If security_key is not required use SYNX_NO_SECURITY_KEY macro.
+ * @security_key_lo  : least significant 32 bits of the 64-bit security_key for authentication.
+ *                     If security_key is not required use SYNX_NO_SECURITY_KEY macro.
  */
 struct synx_import_indv_params_v2 {
 	u32 *new_h_synx;
 	enum synx_import_flags flags;
 	void *fence;
-	u64 client_data;
+	u32 client_data_hi;
+	u32 client_data_lo;
+	u32 security_key_hi;
+	u32 security_key_lo;
+};
+
+/**
+ * struct synx_import_arr_params_v2 - Synx import arr v2 parameters
+ *
+ * @list        : List of synx_import_indv_params_v2 params
+ * @num_fences  : Number of fences or synx handles to be imported/created
+ */
+struct synx_import_arr_params_v2 {
+	struct synx_import_indv_params_v2 *list;
+	u32 num_fences;
 };
 
 /**
@@ -617,9 +696,11 @@ struct synx_import_arr_params {
 /**
  * struct synx_import_params - Synx import parameters
  *
- * @type : Import/Create params type filled by client
- * @indv : Params to import/create an individual handle or fence
- * @arr  : Params to import/create an array of handles or fences
+ * @type    : Import/Create params type filled by client
+ * @indv    : Params to import/create an individual handle or fence
+ * @arr     : Params to import/create an array of handles or fences
+ * @indv_v2 : Params to import/create an individual handle or fence of v2 params
+ * @arr_v2  : Params to import/create an array of handles or fences of v2 params
  */
 struct synx_import_params {
 	enum synx_import_type type;
@@ -627,6 +708,7 @@ struct synx_import_params {
 		struct synx_import_indv_params indv;
 		struct synx_import_arr_params  arr;
 		struct synx_import_indv_params_v2 indv_v2;
+		struct synx_import_arr_params_v2 arr_v2;
 	};
 };
 
@@ -823,6 +905,7 @@ struct synx_get_params {
  * @release             : releases synx object
  * @get                 : gets information associated with synx object
  * @release_n           : releases an array of synx objects
+ * @merge_n             : merges multiple synx objects with merge_n params
  */
 struct synx_ops {
 	int (*uninitialize)(struct synx_session *session);
@@ -840,6 +923,7 @@ struct synx_ops {
 	int (*release)(struct synx_session *session, u32 h_synx);
 	int (*get)(struct synx_session *session, struct synx_get_params *params);
 	int (*release_n)(struct synx_session *session, struct synx_release_n_params *params);
+	int (*merge_n)(struct synx_session *session, struct synx_merge_n_params *params);
 };
 
 /* Kernel APIs */
@@ -970,6 +1054,18 @@ int synx_signal_n(struct synx_session *session, struct synx_signal_n_params *par
  * @return Status of operation. Negative in case of error. SYNX_SUCCESS otherwise.
  */
 int synx_merge(struct synx_session *session, struct synx_merge_params *params);
+
+/**
+ * synx_merge_n - Merges multiple synx objects with synx_merge_n params
+ *
+ * This function will merge multiple synx objects into a synx group based on synx_merge_type.
+ *
+ * @param session : Session ptr (returned from synx_initialize)
+ * @param params  : Merge_n params
+ *
+ * @return Status of operation. Negative in case of error. SYNX_SUCCESS otherwise.
+ */
+int synx_merge_n(struct synx_session *session, struct synx_merge_n_params *params);
 
 /**
  * synx_wait - Waits for a synx object synchronously

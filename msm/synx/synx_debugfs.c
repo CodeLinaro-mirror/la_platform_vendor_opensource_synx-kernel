@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2019, 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/io.h>
@@ -21,7 +21,6 @@
 
 #define MAX_HELP_BUF_SIZE (4096)
 #define BUF_SIZE 16
-
 
 struct dentry *my_direc;
 u32 lower_handle_id = GLOBAL_HANDLE_STARTING_ID, upper_handle_id = GLOBAL_HANDLE_STARTING_ID;
@@ -189,6 +188,13 @@ struct dentry *synx_init_debugfs_dir(struct synx_device *dev)
 		dprintk(SYNX_ERR, "Failed to create debugfs help file for synx\n");
 		return NULL;
 	}
+
+	if (!debugfs_create_file("synx_test_ioctl",
+		0644, dir, dev, &synx_test_fops)) {
+		dprintk(SYNX_ERR, "Failed to create debugfs test ioctl file for synx\n");
+		return NULL;
+	}
+
 	return dir;
 }
 

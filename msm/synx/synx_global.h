@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2022-2025, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef __SYNX_SHARED_MEM_H__
@@ -19,7 +19,9 @@
  * SYNX_CORE_EVA      : EVA core
  * SYNX_CORE_IRIS     : IRIS core
  * SYNX_CORE_ICP      : ICP core
+ * SYNX_CORE_SOCCP    : SoCCP core
  * SYNX_CORE_ICP1     : OFE ICP core
+ * SYNX_CORE_GMU      : GMU core
  */
 enum synx_core_id {
 	SYNX_CORE_APSS = 0,
@@ -29,6 +31,7 @@ enum synx_core_id {
 	SYNX_CORE_ICP,
 	SYNX_CORE_SOCCP,
 	SYNX_CORE_ICP1,
+	SYNX_CORE_GMU,
 	SYNX_CORE_MAX,
 };
 
@@ -65,15 +68,32 @@ enum synx_core_id {
  * struct synx_global_coredata - Synx global object, used for book keeping
  * of all metadata associated with each individual global entry
  *
- * @status      : Synx signaling status
- * @handle      : Handle of global entry
- * @refcount    : References owned by each core
- * @num_child   : Count of children pending signal (for composite handle)
- * @subscribers : Cores owning reference on this object
- * @waiters     : Cores waiting for notification
- * @parents     : Composite global coredata index of parent entities
- *                Can be part of SYNX_GLOBAL_MAX_PARENTS composite entries.
+ * @status       : Synx signaling status
+ * @handle       : Handle of global entry
+ * @refcount     : References owned by each core
+ * @num_child    : Count of children pending signal (for composite handle)
+ * @subscribers  : Cores owning reference on this object
+ * @waiters      : Cores waiting for notification
+ * @parents      : Composite global coredata index of parent entities
+ *                 Can be part of SYNX_GLOBAL_MAX_PARENTS composite entries.
+ * @h_hwfence    : Handle used for inter-operability with the hw-fence framework.
+ * @reserved     : Reserved
+ * @security_key : 64 bit key passed by client to be used for authentication.
  */
+#if IS_ENABLED(CONFIG_EXTENSIBLE_GLCOREDATA)
+struct synx_global_coredata {
+	u32 status;
+	u32 handle;
+	u16 refcount;
+	u16 num_child;
+	u16 subscribers;
+	u16 waiters;
+	u16 parents[SYNX_GLOBAL_MAX_PARENTS];
+	u32 h_hwfence;
+	u32 reserved;
+	u64 security_key;
+};
+#else
 struct synx_global_coredata {
 	u32 status;
 	u32 handle;
@@ -84,6 +104,7 @@ struct synx_global_coredata {
 	u16 parents[SYNX_GLOBAL_MAX_PARENTS];
 	u32 h_hwfence;
 };
+#endif
 
 /**
  * struct synx_shared_mem - Synx global shared memory descriptor
@@ -109,11 +130,26 @@ static inline bool synx_is_valid_idx(u32 idx)
 }
 
 /**
+ * synx_gmem_init - Request hw_spinlock if required and memset starting
+ *                  index of global memory
+ *
+ * @return Zero on success, negative error on failure.
+ */
+int synx_gmem_init(void);
+
+/**
  * synx_global_mem_init - Initialize global shared memory
  *
  * @return Zero on success, negative error on failure.
  */
 int synx_global_mem_init(void);
+
+/**
+ * synx_global_free_synx_hwlock - Free Synx HW lock
+ *
+ * @return Zero on success, negative error on failure.
+ */
+int synx_global_free_synx_hwlock(void);
 
 /**
  * synx_global_map_core_id - Map Synx core ID to IPC Lite host
@@ -123,6 +159,13 @@ int synx_global_mem_init(void);
  * @return IPC host ID.
  */
 u32 synx_global_map_core_id(enum synx_core_id id);
+
+/**
+ * synx_global_memrory_is_empty - Check if global memory is empty
+ *
+ * @return SYNX_SUCCESS if empty, error otherwise.
+ */
+int synx_global_memory_is_empty(void);
 
 /**
  * synx_global_alloc_index - Allocate new global entry
@@ -137,10 +180,11 @@ int synx_global_alloc_index(u32 *idx);
  * synx_global_init_coredata - Allocate new global entry
  *
  * @param h_synx : Synx global handle
+ * @param security_key : 64 bit security key passed by clients
  *
  * @return SYNX_SUCCESS on success. Negative error on failure.
  */
-int synx_global_init_coredata(u32 h_synx);
+int synx_global_init_coredata(u32 h_synx, u64 security_key);
 
 /**
  * synx_global_get_waiting_cores - Get list of all the waiting core on global entry
@@ -210,7 +254,7 @@ int synx_global_clear_subscribed_core(u32 idx, enum synx_core_id id);
 u32 synx_global_get_status(u32 idx);
 
 /**
- * synx_global_test_status_set_wait - Check status and add core as waiter is not signaled
+ * synx_global_test_status_set_wait - Check status and add core as waiter if not signaled
  *
  * This tests and adds the waiter in one atomic operation, to avoid
  * race with signal which can miss sending the IPC signal if
@@ -223,6 +267,18 @@ u32 synx_global_get_status(u32 idx);
  * @return Status of global entry idx.
  */
 u32 synx_global_test_status_set_wait(u32 idx,
+	enum synx_core_id id);
+
+/**
+ * synx_global_test_status_set_parent_child_wait - Check status and add core as waiter
+ * for child or parent
+ *
+ * @param idx : Global entry index
+ * @param id  : Core to be set as waiter (if unsignaled)
+ *
+ * @return Status of global entry idx.
+ */
+int synx_global_test_status_set_parent_child_wait(u32 idx,
 	enum synx_core_id id);
 
 /**
