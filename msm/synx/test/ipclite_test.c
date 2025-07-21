@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2023-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #define pr_fmt(fmt) "%s:%s: " fmt, KBUILD_MODNAME, __func__
 
@@ -38,6 +38,7 @@ static void init_test_params(void)
 	test_params.num_thread = 1;
 	test_params.num_senders = 1;
 	test_params.num_receivers = 1;
+	test_params.skip_hostid = IPCMEM_INVALID_HOST;
 }
 /* Function to pack the different fields into one 64 bit message value
  * 1 byte header of constant patter 01010101
@@ -118,7 +119,7 @@ static int check_pings(void)
 {
 	bool fail = false;
 	for (int i = 0; i < IPCMEM_NUM_HOSTS; ++i) {
-		if (!is_selected_receiver(i))
+		if (i == test_params.skip_hostid || !is_selected_receiver(i))
 			continue;
 		for (int id = 0; id < test_params.num_thread; id++) {
 			if (th_arr[id].pings_received[i] != th_arr[id].num_pings) {
@@ -172,7 +173,7 @@ static int ping_selected_receivers(void *data_ptr)
 		t_data->run = false;
 		for (int i = 0; i < t_data->num_pings; ++i) {
 			for (int host = 0; host < IPCMEM_NUM_HOSTS; ++host) {
-				if (!is_selected_receiver(host))
+				if (host == test_params.skip_hostid || !is_selected_receiver(host))
 					continue;
 retry_ping:
 				ret = ipclite_test_msg_send(host, macro_to_ping);
@@ -238,9 +239,10 @@ static int negative_tests(void *data_ptr)
 			pr_err("Passing NULL test failed\n");
 			fail = true;
 		}
-		if (!fail)
+		if (!fail) {
 			pr_info("Negative test - pass\n");
-		++cores_completed;
+			++cores_completed;
+		}
 	}
 	ret = wait_event_interruptible_timeout(t_data->wq,
 					cores_completed == test_params.num_senders,
@@ -248,7 +250,7 @@ static int negative_tests(void *data_ptr)
 	if (ret < 1)
 		pr_err("Timeout - other cores not completed\n");
 	else
-		pr_info("Test completed on all cores\n");
+		pr_info("Test passed on all cores\n");
 	complete(&test_done);
 	return fail ? -IPCLITE_TEST_FAIL : 0;
 }
@@ -325,7 +327,7 @@ static int hw_mutex_test(void *data_ptr)
 	if (ret < 1)
 		pr_err("Timeout - other core not completed\n");
 	else
-		pr_info("Test completed on all cores\n");
+		pr_info("Test passed on all cores\n");
 
 	complete(&test_done);
 	return  ret;
@@ -758,7 +760,7 @@ static int ping_test(void)
 				threads_completed == test_params.num_thread);
 	if (ret < 0) {
 		pr_err("All threads not completed, completed %d\n", threads_completed);
-		goto stop;
+		return ret;
 	}
 	pr_debug("All threads completed successfully.\n");
 	pr_debug("Going for checking\n");
@@ -766,13 +768,11 @@ static int ping_test(void)
 	if (!test_params.wait)
 		msleep_interruptible(WAIT_DELAY * test_params.num_receivers);
 	ret = check_pings();
-	if (ret == 0)
+	if (ret == 0) {
 		pr_info("Ping test passed on IPCMEM_APPS\n");
-	else
+		++cores_completed;
+	} else
 		pr_err("Ping test failed on IPCMEM_APPS\n");
-
-stop:
-	++cores_completed;
 	return ret;
 }
 
@@ -784,6 +784,8 @@ static int wrapper_ping_test(void *data_ptr)
 	int timeout = ((SEC_DELAY * 10) + test_params.num_pings/2)
 				* (test_params.num_senders + !test_params.wait);
 
+	if (test_params.skip_hostid == IPCMEM_APPS)
+		pr_info("APPS to APPS loopback disabled\n");
 	if (is_selected_sender(IPCMEM_APPS)) {
 		for (id = 0; id < test_params.num_thread; ++id) {
 			th_arr[id].t_id = id;
@@ -827,21 +829,17 @@ static int debug_tests(void *data_ptr)
 	struct ipclite_thread_data *t_data = data_ptr;
 	uint64_t macro;
 	int ret;
-	int disabled_core = ffz(test_params.enabled_cores);
 
 	if (is_selected_sender(IPCMEM_APPS)) {
 		macro = get_test_macro(DEBUG, 0, PING_SEND, 0, 0);
-		if (disabled_core == IPCMEM_NUM_HOSTS)
-			pr_err("All cores are enabled. No Disabled cores\n");
 		/* Pinging one enabled and disabled cores to get the error and dbg prints */
-		if (disabled_core < IPCMEM_NUM_HOSTS) {
-			ret = ipclite_test_msg_send(disabled_core, macro);
-			if (ret == 0)
-				pr_err("Debug test failed\n");
-			else
-				pr_info("Debug test passed\n");
+		ret = ipclite_test_msg_send(IPCMEM_NUM_HOSTS, macro);
+		if (ret == 0)
+			pr_err("Debug test failed\n");
+		else {
+			pr_info("Debug test passed\n");
+			++cores_completed;
 		}
-		++cores_completed;
 	}
 
 	ret = wait_event_interruptible_timeout(t_data->wq,
@@ -850,14 +848,15 @@ static int debug_tests(void *data_ptr)
 	if (ret < 1)
 		pr_err("Timeout - other cores not completed\n");
 	else
-		pr_info("Test completed on all cores\n");
+		pr_info("Test passed on all cores\n");
 	complete(&test_done);
 	return 0;
 }
 
 static void ipclite_test_set_receivers(void)
 {
-	if (test_params.selected_receivers > IPCLITE_TEST_ALL_CORES) {
+	if (!test_params.selected_receivers ||
+		test_params.selected_receivers > IPCLITE_TEST_ALL_CORES) {
 		pr_err("Invalid value given to selected_receivers\n");
 		test_params.selected_receivers = 1;
 	}
@@ -870,7 +869,8 @@ static void ipclite_test_set_receivers(void)
 
 static void ipclite_test_set_senders(void)
 {
-	if (test_params.selected_senders > IPCLITE_TEST_ALL_CORES) {
+	if (!test_params.selected_senders ||
+		test_params.selected_senders > IPCLITE_TEST_ALL_CORES) {
 		pr_err("Invalid value given to selected_senders\n");
 		test_params.selected_senders = 1;
 	}
@@ -1006,14 +1006,75 @@ static int basic_ping_test(void)
 	return IPCLITE_TEST_PASS;
 }
 
+static int ping_config(char *temp_buf)
+{
+	int ret, common_cores;
+
+	ret = parse_param(&temp_buf, &test_params.wait);
+	if (ret != 0)
+		return ret;
+	ret = parse_param(&temp_buf, &test_params.num_itr);
+	if (ret != 0)
+		return ret;
+	ret = parse_param(&temp_buf, &test_params.num_thread);
+	if (ret != 0)
+		return ret;
+	if (!test_params.num_thread || test_params.num_thread > IPCLITE_TEST_MAX_THREADS) {
+		pr_err("Invalid value given to num_thread\n");
+		test_params.num_thread = 1;
+	} else if (test_params.num_thread > test_params.num_pings) {
+		pr_err("Invalid num_thread for given number of pings\n");
+		test_params.num_thread = test_params.num_pings;
+	}
+	common_cores = test_params.selected_senders & test_params.selected_receivers;
+	common_cores = common_cores ? hweight_long(common_cores) : 1;
+	if (test_params.wait * test_params.num_thread * common_cores > 1000) {
+		pr_err("Overall wait value is more then queue size. Setting max.\n");
+		test_params.wait = 1000/(test_params.num_thread * common_cores);
+	} else if (test_params.wait > test_params.num_pings) {
+		pr_err("Invalid value given to wait\n");
+		test_params.wait = 1;
+	}
+	if (!test_params.num_itr || test_params.num_itr > 4000) {
+		pr_err("Invalid value given to itr\n");
+		test_params.num_itr = 1;
+	}
+	pr_info("num_pings set to %d\n", test_params.num_pings);
+	pr_info("num_itr set to %d\n", test_params.num_itr);
+	pr_info("wait set to %d\n", test_params.wait);
+	pr_info("num_thread set to %d\n", test_params.num_thread);
+	return 0;
+}
+
+static int loopback_config(char *temp_buf)
+{
+	int ret;
+
+	ret = parse_param(&temp_buf, &test_params.skip_hostid);
+	if (ret != 0)
+		return ret;
+	if (test_params.skip_hostid > 1) {
+		pr_err("Invalid value given to loopback\n");
+		test_params.skip_hostid = 1;
+	}
+	if (test_params.skip_hostid == 0) {
+		pr_info("loopback disabled\n");
+		test_params.skip_hostid = IPCMEM_APPS;
+	} else {
+		pr_info("loopback enabled\n");
+		test_params.skip_hostid = IPCMEM_INVALID_HOST;
+	}
+	return 0;
+}
+
 static ssize_t ipclite_test_params_write(struct kobject *kobj,
 					struct kobj_attribute *attr,
 					const char *buf, size_t count)
 {
 	char *temp_buf = kmalloc(strlen(buf)+1, GFP_KERNEL);
 	char *temp_ptr = temp_buf;
-	int ret, common_cores;
-	uint64_t param_macro;
+	int ret;
+	uint64_t param_macro, test_case;
 
 	if (!temp_buf) {
 		pr_err("Error: Memory not allocated\n");
@@ -1021,126 +1082,62 @@ static ssize_t ipclite_test_params_write(struct kobject *kobj,
 	}
 
 	ret = strscpy(temp_buf, buf, strlen(buf)+1);
-
 	if (ret < 0) {
 		pr_err("Error: User input is too large\n");
 		goto exit;
 	}
-
 	init_test_params();
 	ret = parse_param(&temp_buf, &test_params.selected_test_case);
 	if (ret != 0)
 		goto exit;
-
-	switch (test_params.selected_test_case) {
-	case PING:
-		ret = parse_param(&temp_buf, &test_params.selected_senders);
-		if (ret != 0)
-			break;
-		ipclite_test_set_senders();
-		ret = parse_param(&temp_buf, &test_params.selected_receivers);
-		if (ret != 0)
-			break;
-		ipclite_test_set_receivers();
-		ret = parse_param(&temp_buf, &test_params.num_pings);
-		if (ret != 0)
-			break;
-		ret = parse_param(&temp_buf, &test_params.wait);
-		if (ret != 0)
-			break;
-		ret = parse_param(&temp_buf, &test_params.num_itr);
-		if (ret != 0)
-			break;
-		ret = parse_param(&temp_buf, &test_params.num_thread);
-		if (ret != 0)
-			break;
-		if (test_params.num_pings > 200000) {
-			pr_err("Invalid value given to pings\n");
-			test_params.num_pings = 1;
-		}
-		if (test_params.num_thread > IPCLITE_TEST_MAX_THREADS) {
-			pr_err("Invalid value given to num_thread\n");
-			test_params.num_thread = 1;
-		} else if (test_params.num_thread > test_params.num_pings) {
-			pr_err("Invalid num_thread for given number of pings\n");
-			test_params.num_thread = test_params.num_pings;
-		}
-		common_cores = test_params.selected_senders
-								& test_params.selected_receivers;
-		common_cores = common_cores ? hweight_long(common_cores) : 1;
-		if (test_params.wait * test_params.num_thread * common_cores > 1000) {
-			pr_err("Overall wait value is more then queue size. Setting max.\n");
-			test_params.wait = 1000/(test_params.num_thread * common_cores);
-		} else if (test_params.wait > test_params.num_pings) {
-			pr_err("Invalid value given to wait\n");
-			test_params.wait = 1;
-		}
-		if (test_params.num_itr > 4000) {
-			pr_err("Invalid value given to itr\n");
-			test_params.num_itr = 1;
-		}
-		pr_info("num_pings set to %d\n", test_params.num_pings);
-		pr_info("num_itr set to %d\n", test_params.num_itr);
-		pr_info("wait set to %d\n", test_params.wait);
-		pr_info("num_thread set to %d\n", test_params.num_thread);
-		break;
-	case NEGATIVE:
-	case HW_MUTEX:
-		ret = parse_param(&temp_buf, &test_params.selected_senders);
-		if (ret != 0)
-			break;
-		ipclite_test_set_senders();
-		ret = parse_param(&temp_buf, &test_params.selected_receivers);
-		if (ret != 0)
-			break;
-		ipclite_test_set_receivers();
-		break;
-	case GLOBAL_ATOMIC:
-		ret = parse_param(&temp_buf, &test_params.selected_senders);
-		if (ret != 0)
-			break;
-		ipclite_test_set_senders();
-		ret = parse_param(&temp_buf, &test_params.num_itr);
-		if (ret != 0)
-			break;
-		if (test_params.num_itr > 4000) {
-			pr_err("Invalid value given to itr\n");
-			test_params.num_itr = 1;
-		}
-		pr_info("num_itr set to %d\n", test_params.num_itr);
-		break;
-	case DEBUG:
-		ret = parse_param(&temp_buf, &test_params.selected_senders);
-		if (ret != 0)
-			break;
-		ipclite_test_set_senders();
-		break;
-	case SSR:
-		ret = parse_param(&temp_buf, &test_params.selected_senders);
-		if (ret != 0)
-			break;
-		ipclite_test_set_senders();
-		ret = parse_param(&temp_buf, &test_params.selected_receivers);
-		if (ret != 0)
-			break;
-		ipclite_test_set_receivers();
-		ret = parse_param(&temp_buf, &test_params.num_pings);
-		if (ret != 0)
-			break;
-		if (test_params.num_pings > 20000) {
-			pr_err("Invalid value given to pings\n");
-			test_params.num_pings = 1;
-		}
-		pr_info("num_pings set to %d\n", test_params.num_pings);
-		break;
-	default:
+	test_case = test_params.selected_test_case;
+	if (test_case == LOOPBACK) {
+		ret = loopback_config(temp_buf);
+		goto exit;
+	}
+	if (test_case == 0 || test_case > NUM_TESTS) {
 		pr_err("Error: Wrong input provided\n");
 		goto exit;
 	}
+	ret = parse_param(&temp_buf, &test_params.selected_senders);
 	if (ret != 0)
 		goto exit;
+	ipclite_test_set_senders();
+	if (test_case == DEBUG)
+		goto start;
+	if (test_case == GLOBAL_ATOMIC) {
+		ret = parse_param(&temp_buf, &test_params.num_itr);
+		if (ret != 0)
+			goto exit;
+		if (!test_params.num_itr || test_params.num_itr > 4000) {
+			pr_err("Invalid value given to itr\n");
+			test_params.num_itr = 1;
+		}
+		pr_info("num_itr set to %d\n", test_params.num_itr);
+		goto start;
+	}
+	ret = parse_param(&temp_buf, &test_params.selected_receivers);
+	if (ret != 0)
+		goto exit;
+	ipclite_test_set_receivers();
+	if (test_case == NEGATIVE || test_case == HW_MUTEX)
+		goto start;
+	ret = parse_param(&temp_buf, &test_params.num_pings);
+	if (ret != 0)
+		goto exit;
+	if (!test_params.num_pings ||
+		test_params.num_pings > ((test_case == SSR)?20000:200000)) {
+		pr_err("Invalid value given to pings\n");
+		test_params.num_pings = 1;
+	}
+	if (test_case == PING) {
+		ret = ping_config(temp_buf);
+		if (ret != 0)
+			goto exit;
+	}
+start:
 	test_params.enabled_cores = test_params.selected_senders;
-	if (test_params.selected_test_case != NEGATIVE)
+	if (test_case != NEGATIVE)
 		test_params.enabled_cores |= test_params.selected_receivers;
 	ret = basic_ping_test();
 	if (ret != IPCLITE_TEST_PASS)
@@ -1162,15 +1159,20 @@ static void ping_callback(int test_info, int t_id, int payload_info, int start_s
 		reply_macro = get_test_macro(test_info, t_id,
 						PING_REPLY, 0, 0);
 		ipclite_test_msg_send(client_id, reply_macro);
-	}
-	if (payload_info == PING_REPLY) {
-		if (test_info == PING)
-			ping_receive(&th_arr[t_id], client_id);
 		return;
 	}
-	if (pass_fail_info == IPCLITE_TEST_PASS)
+	if (payload_info == PING_REPLY) {
+		if (th_arr == NULL) {
+			pr_err("Invalid thread data\n");
+			return;
+		}
+		ping_receive(&th_arr[t_id], client_id);
+		return;
+	}
+	if (pass_fail_info == IPCLITE_TEST_PASS) {
 		pr_info("Test passed on core %s\n", core_name[client_id]);
-	else if (pass_fail_info == IPCLITE_TEST_FAIL)
+		++cores_completed;
+	} else if (pass_fail_info == IPCLITE_TEST_FAIL)
 		pr_err("Test failed on core %s\n", core_name[client_id]);
 	if (start_stop_info == IPCLITE_TEST_STOP) {
 		if (test_params.selected_test_case == SSR) {
@@ -1178,7 +1180,6 @@ static void ping_callback(int test_info, int t_id, int payload_info, int start_s
 			wake_up_interruptible(&wakeup_check.wq);
 			return;
 		}
-		++cores_completed;
 		if (cores_completed == test_params.num_senders)
 			wake_up_interruptible(&m_thread.wq);
 		return;
