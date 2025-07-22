@@ -502,7 +502,7 @@ int synx_util_local_map_is_empty(unsigned long *bitmap, unsigned int size)
 		return -SYNX_NOMEM;
 
 	index = find_next_bit((unsigned long *)bitmap,
-			size, index);
+			size, index+1);
 
 	if (index >= size)
 		return SYNX_SUCCESS;
