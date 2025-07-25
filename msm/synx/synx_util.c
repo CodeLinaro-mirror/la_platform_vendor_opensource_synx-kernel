@@ -7,6 +7,7 @@
 #include <linux/slab.h>
 #include <linux/random.h>
 #include <linux/vmalloc.h>
+#include <linux/version.h>
 
 #include "synx_debugfs.h"
 #include "synx_util.h"
@@ -403,7 +404,11 @@ void synx_util_object_destroy(struct synx_coredata *synx_obj)
 			dprintk(SYNX_VERB,
 				"Deleting timer synx_cb 0x%p, timeout 0x%llx\n",
 				synx_cb, synx_cb->timeout);
-			del_timer_sync(&synx_cb->synx_timer);
+#if (KERNEL_VERSION(6, 15, 0) <= LINUX_VERSION_CODE)
+				timer_delete_sync(&synx_cb->synx_timer);
+#else
+				del_timer_sync(&synx_cb->synx_timer);
+#endif
 		}
 
 		synx_cb->status = SYNX_STATE_SIGNALED_CANCEL;
@@ -1389,7 +1394,11 @@ void synx_util_callback_dispatch(struct synx_coredata *synx_obj, u32 status)
 			dprintk(SYNX_VERB,
 				"Deleting timer synx_cb %p, timeout 0x%llx\n",
 				synx_cb, synx_cb->timeout);
+#if (KERNEL_VERSION(6, 15, 0) <= LINUX_VERSION_CODE)
+			timer_delete_sync(&synx_cb->synx_timer);
+#else
 			del_timer_sync(&synx_cb->synx_timer);
+#endif
 		}
 		synx_cb->status = status;
 		list_del_init(&synx_cb->node);
