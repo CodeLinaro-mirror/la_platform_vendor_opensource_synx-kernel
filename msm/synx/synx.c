@@ -2875,8 +2875,11 @@ static int synx_handle_import(struct synx_private_ioctl_arg *k_ioctl,
 			k_ioctl->size))
 		return -EFAULT;
 
-	if ((import_info.flags & SYNX_IMPORT_DMA_FENCE) &&
-		(import_info.desc.id[0] != 0)) {
+	if (import_info.flags & SYNX_IMPORT_DMA_FENCE) {
+		if (import_info.desc.id[0] == 0) {
+			dprintk(SYNX_ERR, "dma fd is not provided\n");
+			return -SYNX_INVALID;
+		}
 		params.indv.fence =
 			sync_file_get_fence(import_info.desc.id[0]);
 		if (IS_ERR_OR_NULL(params.indv.fence)) {
@@ -2899,7 +2902,7 @@ static int synx_handle_import(struct synx_private_ioctl_arg *k_ioctl,
 
 	// Fence needs to be put irresepctive of import status
 	if ((import_info.flags & SYNX_IMPORT_DMA_FENCE) &&
-		(import_info.synx_obj != 0))
+		(import_info.desc.id[0] != 0))
 		dma_fence_put(params.indv.fence);
 
 	if (result != SYNX_SUCCESS)
@@ -2928,8 +2931,11 @@ static int synx_handle_import_v2(struct synx_private_ioctl_arg *k_ioctl,
 		u64_to_user_ptr(k_ioctl->ioctl_ptr), k_ioctl->size))
 		return -EFAULT;
 
-	if ((import_info_v2.flags & SYNX_IMPORT_DMA_FENCE) &&
-		(import_info_v2.desc.id[0] != 0)) {
+	if (import_info_v2.flags & SYNX_IMPORT_DMA_FENCE) {
+		if (import_info_v2.desc.id[0] == 0) {
+			dprintk(SYNX_ERR, "dma fd is not provided\n");
+			return -SYNX_INVALID;
+		}
 		params.indv_v2.fence =
 			sync_file_get_fence(import_info_v2.desc.id[0]);
 		if (IS_ERR_OR_NULL(params.indv_v2.fence)) {
@@ -2954,7 +2960,7 @@ static int synx_handle_import_v2(struct synx_private_ioctl_arg *k_ioctl,
 
 	// Fence needs to be put irresepctive of import status
 	if ((import_info_v2.flags & SYNX_IMPORT_DMA_FENCE) &&
-		(import_info_v2.synx_obj != 0))
+		(import_info_v2.desc.id[0] != 0))
 		dma_fence_put(params.indv_v2.fence);
 
 	if (result != SYNX_SUCCESS)
@@ -3003,8 +3009,12 @@ static int synx_handle_import_arr(
 		params.indv.new_h_synx = &arr[idx].new_synx_obj;
 		params.indv.flags = arr[idx].flags;
 
-		if ((arr[idx].flags & SYNX_IMPORT_DMA_FENCE) &&
-			(arr[idx].desc.id[0] != 0)) {
+		if (arr[idx].flags & SYNX_IMPORT_DMA_FENCE) {
+			if (arr[idx].desc.id[0] == 0) {
+				dprintk(SYNX_ERR, "dma fd is not provided at idx %u\n", idx);
+				rc = -SYNX_INVALID;
+				break;
+			}
 			params.indv.fence =
 				sync_file_get_fence(arr[idx].desc.id[0]);
 			if (IS_ERR_OR_NULL(params.indv.fence)) {
@@ -3023,7 +3033,7 @@ static int synx_handle_import_arr(
 
 		// Fence needs to be put irresepctive of import status
 		if ((arr[idx].flags & SYNX_IMPORT_DMA_FENCE) &&
-			arr[idx].synx_obj != 0)
+			arr[idx].desc.id[0] != 0)
 			dma_fence_put(params.indv.fence);
 
 		if (rc != SYNX_SUCCESS)
@@ -3087,8 +3097,12 @@ static int synx_handle_import_arr_v2(
 		params.indv_v2.security_key_hi = arr_v2[idx].security_key_hi;
 		params.indv_v2.security_key_lo = arr_v2[idx].security_key_lo;
 
-		if ((arr_v2[idx].flags & SYNX_IMPORT_DMA_FENCE) &&
-			(arr_v2[idx].desc.id[0] != 0)) {
+		if (arr_v2[idx].flags & SYNX_IMPORT_DMA_FENCE) {
+			if (arr_v2[idx].desc.id[0] == 0) {
+				dprintk(SYNX_ERR, "dma fd is not provided at idx %u\n", idx);
+				rc = -SYNX_INVALID;
+				break;
+			}
 			params.indv_v2.fence =
 				sync_file_get_fence(arr_v2[idx].desc.id[0]);
 			if (IS_ERR_OR_NULL(params.indv_v2.fence)) {
@@ -3107,7 +3121,7 @@ static int synx_handle_import_arr_v2(
 
 		// Fence needs to be put irresepctive of import status
 		if ((arr_v2[idx].flags & SYNX_IMPORT_DMA_FENCE) &&
-			arr_v2[idx].synx_obj != 0)
+			arr_v2[idx].desc.id[0] != 0)
 			dma_fence_put(params.indv_v2.fence);
 
 		if (rc != SYNX_SUCCESS)
