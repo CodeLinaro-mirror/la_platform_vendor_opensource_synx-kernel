@@ -278,7 +278,7 @@ static int synx_native_create_core(struct synx_client *client,
 	if (*params->h_synx != 0)
 		map_entry_can_exist = true;
 
-	synx_obj = kzalloc(sizeof(*synx_obj), GFP_KERNEL);
+	synx_obj = kzalloc(sizeof(*synx_obj), GFP_ATOMIC);
 	if (IS_ERR_OR_NULL(synx_obj)) {
 		dprintk(SYNX_ERR, "synx_obj allocation failed\n");
 		return -SYNX_NOMEM;
@@ -2444,7 +2444,7 @@ retry:
 
 		curr_h_synx = *params->new_h_synx;
 
-		entry = kzalloc(sizeof(*entry), GFP_KERNEL);
+		entry = kzalloc(sizeof(*entry), GFP_ATOMIC);
 		if (IS_ERR_OR_NULL(entry)) {
 			rc = -SYNX_NOMEM;
 			curr_h_synx = *c_params.h_synx;
