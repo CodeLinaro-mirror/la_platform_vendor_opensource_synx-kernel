@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
- * Copyright (c) 2024-2025, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #define pr_fmt(fmt) "%s:%s: " fmt, KBUILD_MODNAME, __func__
 
@@ -44,7 +44,6 @@ static struct ipclite_debug_struct *ipclite_dbg_struct;
 static struct ipclite_debug_inmem_buf *ipclite_dbg_inmem;
 static struct mutex ssr_mutex;
 static struct kobject *sysfs_kobj;
-static bool hibernation_enabled;
 
 static uint32_t channel_status_info[IPCMEM_NUM_HOSTS];
 static u32 global_atomic_support = GLOBAL_ATOMICS_ENABLED;
@@ -1034,8 +1033,6 @@ static int set_ipcmem_access_control(struct ipclite_info *ipclite)
 		return ret;
 	}
 
-	hibernation_enabled = true;
-
 	return ret;
 }
 #endif
@@ -1589,26 +1586,75 @@ error:
 
 static int ipclite_driver_freeze(struct device *dev)
 {
-	if (hibernation_enabled)
-		hibernation_enabled = false;
+	if (unlikely(!ipclite)) {
+		pr_err("IPCLite not initialized\n");
+		return -ENOMEM;
+	}
+
+	ipclite->ipcmem.toc->hdr.init_done = 0;
+	memset(ipclite->ipcmem.toc->recovery.configured_core, 0,
+						IPCMEM_NUM_HOSTS * sizeof(uint32_t));
+
+	IPCLITE_OS_LOG(IPCLITE_DBG, "Entered ipclite hibernate successfully\n");
 
 	return 0;
 }
 
 static int ipclite_driver_restore(struct device *dev)
 {
-	int ret = 0;
+	int ret = 0, res = 0, remote_pid;
+	struct ipclite_channel broadcast;
 
-	if (!hibernation_enabled) {
-		memset(ipclite->ipcmem.mem.virt_base, 0, ipclite->ipcmem.mem.size);
-		#if  (KERNEL_VERSION(6, 1, 0) > LINUX_VERSION_CODE)
-		ret = set_ipcmem_access_control(ipclite);
-		if (ret) {
-			dev_err(dev, "failed to setup ipclite mem\n");
-			return -EINVAL;
-		}
-		#endif
+	if (unlikely(!ipclite)) {
+		pr_err("IPCLite not initialized\n");
+		return -ENOMEM;
 	}
+
+	memset(ipclite->ipcmem.mem.virt_base, 0, ipclite->ipcmem.mem.size);
+
+	#if ((KERNEL_VERSION(6, 1, 0)) > LINUX_VERSION_CODE)
+	ret = set_ipcmem_access_control(ipclite);
+	if (ret) {
+		IPCLITE_OS_LOG(IPCLITE_ERR, "failed to set access control policy\n");
+		return -EINVAL;
+	}
+	#endif
+
+	ipcmem_init(&ipclite->ipcmem);
+
+	for (remote_pid = 0; remote_pid < IPCMEM_NUM_HOSTS; remote_pid++) {
+		if (channel_status_info[remote_pid] != CHANNEL_INACTIVE) {
+			ipclite->ipcmem.toc->recovery.configured_core[remote_pid] =
+					CONFIGURED_CORE;
+		}
+	}
+
+	broadcast = ipclite->channel[IPCMEM_APPS];
+	res = mbox_send_message(broadcast.irq_info[IPCLITE_MEM_INIT_SIGNAL].mbox_chan,
+							 NULL);
+	if (res < 0) {
+		IPCLITE_OS_LOG(IPCLITE_INFO, "unable to send broadcast message to all cores\n");
+		return res;
+	}
+
+	mbox_client_txdone(broadcast.irq_info[IPCLITE_MEM_INIT_SIGNAL].mbox_chan, 0);
+
+	if (global_atomic_support) {
+		ipclite->ipcmem.toc->ipclite_features.global_atomic_support =
+							GLOBAL_ATOMICS_ENABLED;
+	} else {
+		ipclite->ipcmem.toc->ipclite_features.global_atomic_support =
+							GLOBAL_ATOMICS_DISABLED;
+	}
+
+	/* initialize hwlock owner to invalid host */
+	ipclite->ipcmem.toc->recovery.global_atomic_hwlock_owner = IPCMEM_INVALID_HOST;
+
+	/* Update the Global Debug variable for FW cores */
+	ipclite_dbg_info->debug_level = ipclite_debug_level;
+	ipclite_dbg_info->debug_control = ipclite_debug_control;
+
+	IPCLITE_OS_LOG(IPCLITE_DBG, "Exited ipclite hibernate successfully\n");
 
 	return ret;
 }
