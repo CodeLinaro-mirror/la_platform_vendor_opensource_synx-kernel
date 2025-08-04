@@ -175,7 +175,7 @@ int synx_util_add_callback(struct synx_coredata *synx_obj,
 	if (IS_ERR_OR_NULL(synx_obj))
 		return -SYNX_INVALID;
 
-	signal_cb = kzalloc(sizeof(*signal_cb), GFP_KERNEL);
+	signal_cb = kzalloc(sizeof(*signal_cb), GFP_ATOMIC);
 	if (IS_ERR_OR_NULL(signal_cb)) {
 		dprintk(SYNX_ERR, "signal_cb allocation failed\n");
 		return -SYNX_NOMEM;
@@ -1105,7 +1105,7 @@ struct synx_map_entry *synx_util_insert_to_map(
 	struct synx_map_entry *map_entry;
 	struct synx_map_entry *curr;
 
-	map_entry = kzalloc(sizeof(*map_entry), GFP_KERNEL);
+	map_entry = kzalloc(sizeof(*map_entry), GFP_ATOMIC);
 	if (IS_ERR_OR_NULL(map_entry)) {
 		dprintk(SYNX_ERR, "map_entry allocation failed\n");
 		return ERR_PTR(-SYNX_NOMEM);
