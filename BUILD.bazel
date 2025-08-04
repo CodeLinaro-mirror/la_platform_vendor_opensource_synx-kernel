@@ -45,3 +45,7 @@ define_seraph()
 load(":art.bzl", "define_art")
 
 define_art()
+
+load(":autogvm.bzl", "define_autogvm")
+
+define_autogvm()
