@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2023-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #include "../ipclite_client.h"
 #include "../ipclite.h"
@@ -16,8 +16,8 @@
 #define BITS(x) (sizeof(x)*8)
 
 struct handle_t {
-	int handle_bitmap[BITMAP_SIZE];
-	int handle_data[NUM_HANDLES];
+	uint32_t handle_bitmap[BITMAP_SIZE];
+	uint32_t handle_data[NUM_HANDLES];
 };
 
 /* Flags for Pass, Fail, Start, and Stop */
@@ -48,6 +48,7 @@ enum ipclite_test_type {
 	SSR		= 5,
 	HW_MUTEX	= 6,
 	NUM_TESTS	= 6,
+	LOOPBACK	= 7,
 };
 
 /* List of sysfs parameters */
@@ -86,8 +87,8 @@ static char core_name[IPCMEM_NUM_HOSTS][13] = {
 					"IPCMEM_APPS",
 					"IPCMEM_MODEM",
 					"IPCMEM_LPASS",
-					"IPCMEM_SLPI",
 					"IPCMEM_GPU",
+					"IPCMEM_SOCCP",
 					"IPCMEM_CDSP",
 					"IPCMEM_CVP",
 					"IPCMEM_CAM",
@@ -114,6 +115,7 @@ struct ipclite_test_params {
 	unsigned int num_thread;
 	unsigned int num_senders;
 	unsigned int num_receivers;
+	unsigned int skip_hostid;
 };
 
 struct ipclite_thread_data {
