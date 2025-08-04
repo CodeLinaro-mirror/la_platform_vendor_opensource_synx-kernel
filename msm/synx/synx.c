@@ -1023,7 +1023,11 @@ void synx_timer_handler(struct work_struct *cb_dispatch)
 		if (cur == synx_cb) {
 			dprintk(SYNX_VERB, "Deleting timer synx_cb %pK\n", synx_cb);
 			synx_cb->status = SYNX_STATE_TIMEOUT;
+#if (KERNEL_VERSION(6, 15, 0) <= LINUX_VERSION_CODE)
+			timer_delete(&synx_cb->synx_timer);
+#else
 			del_timer(&synx_cb->synx_timer);
+#endif
 			list_del_init(&synx_cb->node);
 			queue_work(synx_dev->wq_cb, &synx_cb->cb_dispatch);
 			break;
@@ -1271,7 +1275,11 @@ int synx_internal_cancel_async_wait(
 			dprintk(SYNX_VERB,
 				"Deleting timer synx_cb %p, timeout 0x%llx\n",
 				synx_cb, synx_cb->timeout);
-			del_timer_sync(&synx_cb->synx_timer);
+#if (KERNEL_VERSION(6, 15, 0) <= LINUX_VERSION_CODE)
+				timer_delete_sync(&synx_cb->synx_timer);
+#else
+				del_timer_sync(&synx_cb->synx_timer);
+#endif
 		}
 		switch (ret) {
 		case 1:
