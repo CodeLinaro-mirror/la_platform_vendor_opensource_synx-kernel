@@ -67,7 +67,7 @@ void synx_fence_enable_handler(struct work_struct *cb_dispatch)
 	struct synx_fence_enable_data *synx_fence_enable_cb =
 		container_of(cb_dispatch, struct synx_fence_enable_data, cb_dispatch);
 	struct dma_fence *fence = synx_fence_enable_cb->fence;
-	struct synx_map_entry *entry;
+	struct synx_map_entry *entry = NULL;
 	struct synx_coredata *synx_obj;
 
 	h_synx = synx_util_get_fence_entry((u64)fence, true);
@@ -79,21 +79,19 @@ void synx_fence_enable_handler(struct work_struct *cb_dispatch)
 		entry = synx_util_get_map_entry(h_synx);
 		if (IS_ERR_OR_NULL(entry)) {
 			dprintk(SYNX_ERR, "Invalid map entry for h_synx %d\n", h_synx);
-			return;
+			goto free;
 		}
 		synx_obj = entry->synx_obj;
 
 		if (dma_fence_is_array(fence)) {
 			dprintk(SYNX_ERR, "dma fence array is not expected\n");
-			synx_util_release_map_entry(entry);
-			return;
+			goto bail;
 		}
 
 		idx = h_synx & SYNX_HANDLE_INDEX_MASK;
 		if (!synx_is_valid_idx(idx)) {
 			dprintk(SYNX_ERR, "invalid idx:%u\n", idx);
-			synx_util_release_map_entry(entry);
-			return;
+			goto bail;
 		}
 
 		mutex_lock(&synx_obj->obj_lock);
@@ -109,9 +107,12 @@ void synx_fence_enable_handler(struct work_struct *cb_dispatch)
 			synx_native_signal_fence(synx_obj, status);
 		}
 		mutex_unlock(&synx_obj->obj_lock);
-
+bail:
 		synx_util_release_map_entry(entry);
 	}
+
+free:
+	kfree(synx_fence_enable_cb);
 }
 
 bool synx_fence_enable_signaling(struct dma_fence *fence)
