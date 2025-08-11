@@ -35,6 +35,14 @@ register_synx_module(
         "synx/synx_stub.c",
         "synx/synx_compat.c",
     ],
+
+    # Configs are handled by config_options = []
+    config_deps = {
+        "CONFIG_QTI_HW_FENCE": [
+            "//vendor/qcom/opensource/mm-drivers/hw_fence:%b_msm_hw_fence",
+            "//vendor/qcom/opensource/mm-drivers/hw_fence:hw_fence_headers",
+        ],
+    },
 )
 
 register_synx_module(
