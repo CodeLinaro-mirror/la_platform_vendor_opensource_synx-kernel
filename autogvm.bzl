@@ -8,4 +8,8 @@ def define_autogvm():
         modules = [
             "synx-stub",
         ],
+
+        config_options = [
+            "CONFIG_QTI_HW_FENCE",
+        ],
     )
