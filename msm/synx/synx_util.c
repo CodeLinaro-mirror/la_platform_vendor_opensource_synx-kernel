@@ -7,6 +7,7 @@
 #include <linux/slab.h>
 #include <linux/random.h>
 #include <linux/vmalloc.h>
+#include <linux/version.h>
 
 #include "synx_debugfs.h"
 #include "synx_util.h"
@@ -14,6 +15,24 @@
 #include "synx_private.h"
 static atomic64_t seq_counter = ATOMIC64_INIT(1);
 extern void synx_external_callback(s32 sync_obj, int status, void *data);
+
+static void *synx_dma_array_cb_func;
+const char *synx_dummy_fence_name(struct dma_fence *fence)
+{
+	return "Synx Dummy fence";
+}
+void synx_dummy_fence_release(struct dma_fence *fence)
+{
+	/* Release dma memory allocated during dma init */
+	kfree(fence->lock);
+	kfree(fence);
+	dprintk(SYNX_MEM, "Released dummy fence %pK\n", fence);
+}
+static struct dma_fence_ops synx_dummy_fence_ops = {
+	.get_driver_name = synx_dummy_fence_name,
+	.get_timeline_name = synx_dummy_fence_name,
+	.release = synx_dummy_fence_release,
+};
 
 int synx_util_init_coredata(struct synx_coredata *synx_obj,
 	struct synx_create_params *params,
@@ -157,7 +176,7 @@ int synx_util_add_callback(struct synx_coredata *synx_obj,
 	if (IS_ERR_OR_NULL(synx_obj))
 		return -SYNX_INVALID;
 
-	signal_cb = kzalloc(sizeof(*signal_cb), GFP_KERNEL);
+	signal_cb = kzalloc(sizeof(*signal_cb), GFP_ATOMIC);
 	if (IS_ERR_OR_NULL(signal_cb)) {
 		dprintk(SYNX_ERR, "signal_cb allocation failed\n");
 		return -SYNX_NOMEM;
@@ -208,12 +227,96 @@ int synx_util_add_callback(struct synx_coredata *synx_obj,
 	return SYNX_SUCCESS;
 }
 
+void *synx_util_get_dma_func_cb(void)
+{
+	struct dma_fence *fence = NULL;
+	struct dma_fence_array *array = NULL;
+	u64 seq = 0;
+	u64 dma_context = 0;
+	spinlock_t *fence_lock;
+	struct dma_fence **fences = NULL;
+	struct dma_fence_cb *cur, *tmp;
+	unsigned long flags = 0;
+	void *dma_array_cb = NULL;
+
+	/* Create a dummy fence for fetching dma array cb purpose */
+	fence = kzalloc(sizeof(*fence), GFP_KERNEL);
+	if (IS_ERR_OR_NULL(fence)) {
+		dprintk(SYNX_ERR, "Memory allocation failed\n");
+		return NULL;
+	}
+
+	fence_lock = kzalloc(sizeof(*fence_lock), GFP_KERNEL);
+	if (IS_ERR_OR_NULL(fence_lock)) {
+		kfree(fence);
+		dprintk(SYNX_ERR, "Memory allocation failed\n");
+		return NULL;
+	}
+
+	fences = kzalloc(sizeof(struct dma_fence *), GFP_KERNEL);
+	if (IS_ERR_OR_NULL(fences)) {
+		kfree(fence);
+		kfree(fence_lock);
+		dprintk(SYNX_ERR, "Memory allocation failed\n");
+		return NULL;
+	}
+
+	spin_lock_init(fence_lock);
+	dma_context = dma_fence_context_alloc(1);
+
+	/* Initialize dummy fence */
+	dma_fence_init(fence, &synx_dummy_fence_ops, fence_lock, dma_context, seq);
+
+	/* Create dma_array fence */
+	fences[0] = fence;
+	array = dma_fence_array_create(1, fences,
+				dma_context, seq, false);
+
+	if (IS_ERR_OR_NULL(array)) {
+		dma_fence_signal(fence);
+		dma_fence_put(fence);
+		kfree(fences);
+		dprintk(SYNX_ERR, "Unable to create dma array fence\n");
+		return NULL;
+	}
+
+	/*
+	 * Enable signaling on dma array. This would add dma array callback function
+	 * pointer on child dma fence callback list.
+	 */
+	dma_fence_enable_sw_signaling(&array->base);
+
+	/*
+	 * Iterate dummy fence and find the dma_array callback. The callback node found
+	 * here should only be from dma array as no other callback is registered on the
+	 * dummy fence.
+	 */
+	spin_lock_irqsave(fence->lock, flags);
+	list_for_each_entry_safe(cur, tmp, &fence->cb_list, node) {
+		if (IS_ERR_OR_NULL(cur->func)) {
+			dprintk(SYNX_ERR, "Invalid callback pointer %pK\n", cur->func);
+			continue;
+		}
+		dma_array_cb = cur->func;
+		dprintk(SYNX_VERB, "dma array callback addr %pK\n", dma_array_cb);
+	}
+	spin_unlock_irqrestore(fence->lock, flags);
+
+	/* Signal the dummy fence to signal the dma_array callback */
+	dma_fence_signal(fence);
+
+	/*
+	 * Release the refcount on dma-array. This would release the refcount on the
+	 * child dma fence as part of dma array release cleanup
+	 */
+	dma_fence_put(&array->base);
+
+	return dma_array_cb;
+}
 static int synx_util_count_dma_array_fences(struct dma_fence *fence)
 {
 	struct dma_fence_cb *cur, *tmp;
 	int32_t num_dma_array = 0;
-	struct dma_fence_array_cb *cb_array = NULL;
-	struct dma_fence_array *array = NULL;
 
 	if (IS_ERR_OR_NULL(fence)) {
 		dprintk(SYNX_ERR, "invalid fence passed\n");
@@ -222,14 +325,10 @@ static int synx_util_count_dma_array_fences(struct dma_fence *fence)
 
 	list_for_each_entry_safe(cur, tmp, &fence->cb_list, node) {
 		// count for parent fences
-		cb_array = container_of(cur, struct dma_fence_array_cb, cb);
-		if (IS_ERR_OR_NULL(cb_array)) {
-			dprintk(SYNX_VERB, "cb_array not found in fence %pK\n", fence);
-			continue;
+		if (!IS_ERR_OR_NULL(cur)) {
+			if (cur->func == synx_dma_array_cb_func)
+				num_dma_array++;
 		}
-		array = cb_array->array;
-		if (!IS_ERR_OR_NULL(array) && dma_fence_is_array(&(array->base)))
-			num_dma_array++;
 	}
 
 	dprintk(SYNX_VERB, "number of fence_array found %d for child fence %pK\n",
@@ -403,7 +502,11 @@ void synx_util_object_destroy(struct synx_coredata *synx_obj)
 			dprintk(SYNX_VERB,
 				"Deleting timer synx_cb 0x%p, timeout 0x%llx\n",
 				synx_cb, synx_cb->timeout);
-			del_timer_sync(&synx_cb->synx_timer);
+#if (KERNEL_VERSION(6, 15, 0) <= LINUX_VERSION_CODE)
+				timer_delete_sync(&synx_cb->synx_timer);
+#else
+				del_timer_sync(&synx_cb->synx_timer);
+#endif
 		}
 
 		synx_cb->status = SYNX_STATE_SIGNALED_CANCEL;
@@ -463,6 +566,19 @@ void synx_util_object_destroy(struct synx_coredata *synx_obj)
 	mutex_destroy(&synx_obj->obj_lock);
 	synx_util_release_fence_entry((u64)synx_obj->fence);
 
+	/*
+	 * Fetching the dma array callback function pointer which can be used
+	 * to check if synx is owning the last refcount on dma-fence apart from
+	 * dma array refcount which can only be put as part of dma-fence signal.
+	 * This is one time call as the address of dma array callback function will
+	 * remain same after device is booted up.
+	 */
+	if (!synx_dma_array_cb_func) {
+		// Get the dma_array function callback
+		synx_dma_array_cb_func = synx_util_get_dma_func_cb();
+	}
+
+
 	/* dma fence framework expects handles are signaled before release,
 	 * so signal if active handle and has last refcount. Synx handles
 	 * on other cores are still active to carry out usual callflow.
@@ -502,7 +618,7 @@ int synx_util_local_map_is_empty(unsigned long *bitmap, unsigned int size)
 		return -SYNX_NOMEM;
 
 	index = find_next_bit((unsigned long *)bitmap,
-			size, index);
+			size, index+1);
 
 	if (index >= size)
 		return SYNX_SUCCESS;
@@ -994,7 +1110,7 @@ struct synx_map_entry *synx_util_insert_to_map(
 	struct synx_map_entry *map_entry;
 	struct synx_map_entry *curr;
 
-	map_entry = kzalloc(sizeof(*map_entry), GFP_KERNEL);
+	map_entry = kzalloc(sizeof(*map_entry), GFP_ATOMIC);
 	if (IS_ERR_OR_NULL(map_entry)) {
 		dprintk(SYNX_ERR, "map_entry allocation failed\n");
 		return ERR_PTR(-SYNX_NOMEM);
@@ -1389,7 +1505,11 @@ void synx_util_callback_dispatch(struct synx_coredata *synx_obj, u32 status)
 			dprintk(SYNX_VERB,
 				"Deleting timer synx_cb %p, timeout 0x%llx\n",
 				synx_cb, synx_cb->timeout);
+#if (KERNEL_VERSION(6, 15, 0) <= LINUX_VERSION_CODE)
+			timer_delete_sync(&synx_cb->synx_timer);
+#else
 			del_timer_sync(&synx_cb->synx_timer);
+#endif
 		}
 		synx_cb->status = status;
 		list_del_init(&synx_cb->node);
