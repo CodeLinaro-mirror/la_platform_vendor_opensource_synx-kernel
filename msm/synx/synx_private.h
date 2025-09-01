@@ -114,6 +114,7 @@ struct synx_timer_cb_data {
 
 struct synx_fence_enable_data {
 	struct dma_fence *fence;
+	u64 dma_seq_no;
 	struct work_struct cb_dispatch;
 };
 

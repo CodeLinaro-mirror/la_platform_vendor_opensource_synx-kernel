@@ -67,6 +67,7 @@ void synx_fence_enable_handler(struct work_struct *cb_dispatch)
 	struct synx_fence_enable_data *synx_fence_enable_cb =
 		container_of(cb_dispatch, struct synx_fence_enable_data, cb_dispatch);
 	struct dma_fence *fence = synx_fence_enable_cb->fence;
+	u64 dma_seq_no = synx_fence_enable_cb->dma_seq_no;
 	struct synx_map_entry *entry = NULL;
 	struct synx_coredata *synx_obj;
 
@@ -77,11 +78,28 @@ void synx_fence_enable_handler(struct work_struct *cb_dispatch)
 	if (h_synx && synx_util_is_global_handle(h_synx)) {
 
 		entry = synx_util_get_map_entry(h_synx);
-		if (IS_ERR_OR_NULL(entry)) {
-			dprintk(SYNX_ERR, "Invalid map entry for h_synx %d\n", h_synx);
+		if (IS_ERR_OR_NULL(entry) || IS_ERR_OR_NULL(entry->synx_obj)) {
+			if (__ratelimit(&synx_ratelimit_state))
+				dprintk(SYNX_WARN, "Invalid map entry for h_synx %d\n", h_synx);
 			goto free;
 		}
 		synx_obj = entry->synx_obj;
+
+		if (IS_ERR_OR_NULL(synx_obj->fence) || synx_obj->fence != fence) {
+			if (__ratelimit(&synx_ratelimit_state))
+				dprintk(SYNX_WARN,
+					"h_synx %u has stale fence entry, new %pK old %pK\n",
+					h_synx, synx_obj->fence, fence);
+			goto bail;
+		}
+
+		if (synx_obj->fence->seqno != dma_seq_no) {
+			if (__ratelimit(&synx_ratelimit_state))
+				dprintk(SYNX_WARN,
+					"dma fence %pK got reused, new_seq %llu old_seq %llu\n",
+					fence, synx_obj->fence->seqno, dma_seq_no);
+			goto bail;
+		}
 
 		if (dma_fence_is_array(fence)) {
 			dprintk(SYNX_ERR, "dma fence array is not expected\n");
@@ -128,6 +146,7 @@ bool synx_fence_enable_signaling(struct dma_fence *fence)
 	dprintk(SYNX_DBG, "dma enable signaling invoked for fence %pK", fence);
 
 	synx_fence_enable_cb->fence = fence;
+	synx_fence_enable_cb->dma_seq_no = fence->seqno;
 
 	INIT_WORK(&synx_fence_enable_cb->cb_dispatch, synx_fence_enable_handler);
 	queue_work(synx_dev->wq_cb, &synx_fence_enable_cb->cb_dispatch);
