@@ -3081,6 +3081,65 @@ static int synx_handle_getstatus(struct synx_private_ioctl_arg *k_ioctl,
 	return SYNX_SUCCESS;
 }
 
+static int synx_handle_get(struct synx_private_ioctl_arg *k_ioctl,
+	struct synx_session *session)
+{
+	struct synx_get_info get_info;
+	struct synx_get_params params;
+	int32_t result = SYNX_SUCCESS;
+
+	if (k_ioctl->size != sizeof(get_info))
+		return -SYNX_INVALID;
+
+	if (copy_from_user(&get_info,
+			u64_to_user_ptr(k_ioctl->ioctl_ptr),
+			k_ioctl->size))
+		return -EFAULT;
+
+	params.type = get_info.type;
+	if (params.type == SYNX_GET_FENCE_PARAMS ||
+		params.type == SYNX_GET_STATUS_PARAMS ||
+		params.type == SYNX_GET_CLIENT_DATA) {
+		params.h_synx = get_info.synx_obj;
+	} else {
+		return -SYNX_INVALID;
+	}
+
+	result = synx_get(session, &params);
+
+	if (result != SYNX_SUCCESS)
+		return result;
+
+	if (get_info.type == SYNX_GET_FENCE_PARAMS) {
+		if (IS_ERR_OR_NULL(params.fence))
+			return -SYNX_INVALID;
+		get_info.fd = synx_create_sync_fd(params.fence);
+		/*
+		 * release additional reference taken in synx_get.
+		 * additional reference ensures the fence is valid and
+		 * does not race with handle/fence release.
+		 */
+		dma_fence_put(params.fence);
+		if (get_info.fd < 0)
+			return get_info.fd;
+	} else if (get_info.type == SYNX_GET_STATUS_PARAMS) {
+		get_info.synx_state = params.status;
+	} else if (get_info.type == SYNX_GET_CLIENT_DATA) {
+		get_info.client_data = params.client_data;
+	} else if (get_info.type == SYNX_GET_MAX_GLOBAL_FENCES) {
+		get_info.max_global_fences = params.max_global_fences;
+	} else {
+		return -SYNX_INVALID;
+	}
+
+	if (copy_to_user(u64_to_user_ptr(k_ioctl->ioctl_ptr),
+			&get_info,
+			k_ioctl->size))
+		return -EFAULT;
+
+	return SYNX_SUCCESS;
+}
+
 static int synx_handle_import(struct synx_private_ioctl_arg *k_ioctl,
 	struct synx_session *session)
 {
@@ -4004,6 +4063,9 @@ static long synx_ioctl(struct file *filep,
 		break;
 	case SYNX_GETSTATUS:
 		rc = synx_handle_getstatus(&k_ioctl, session);
+		break;
+	case SYNX_GET:
+		rc = synx_handle_get(&k_ioctl, session);
 		break;
 	case SYNX_IMPORT:
 		rc = synx_handle_import(&k_ioctl, session);

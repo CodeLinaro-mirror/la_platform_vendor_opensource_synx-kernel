@@ -355,6 +355,35 @@ struct synx_fence_fd {
 };
 
 /**
+ * struct synx_get_info - get info
+ *
+ * @type              : Get type
+ * @synx_obj          : Synx handle
+ * @feature           : Feature to be queried
+ * @synx_state        : signaling status of synx object
+ * @fd                : native fence associated with synx object
+ * @client_data       : 64-bit client metadata associated with synx object
+ * @max_global_fences : maximum number of fences used for cross-core signaling
+ * @reserved          : Reserved
+ */
+struct synx_get_info {
+	__u32 type;
+	union{
+		__u32 synx_obj;
+		__u32 feature;
+	};
+	union {
+		__u32 synx_state;
+		__s32 fd;
+		__u64 client_data;
+		__u64 max_global_fences;
+	};
+	union{
+		__u64 reserved;
+	};
+};
+
+/**
  * struct synx_private_ioctl_arg - Sync driver ioctl argument
  *
  * @id        : IOCTL command id
@@ -535,6 +564,8 @@ struct synx_recover_info {
 #define SYNX_IMPORT_V2                       18
 #define SYNX_IMPORT_ARR_V2                   19
 #define SYNX_MERGE_N                         20
+#define SYNX_SIGNAL_N                        21
 #define SYNX_REGISTER_PAYLOAD_N              22
 #define SYNX_DEREGISTER_PAYLOAD_N            23
+#define SYNX_GET                             24
 #endif /* __UAPI_SYNX_H__ */
