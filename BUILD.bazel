@@ -41,3 +41,7 @@ define_canoe()
 load(":seraph.bzl", "define_seraph")
 
 define_seraph()
+
+load(":autogvm.bzl", "define_autogvm")
+
+define_autogvm()
