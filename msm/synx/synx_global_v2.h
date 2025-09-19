@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2022, 2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef __SYNX_SHARED_MEM_H__
@@ -102,6 +102,13 @@ static inline bool synx_is_valid_idx(u32 idx)
 int synx_global_mem_init(void);
 
 /**
+ * synx_global_free_synx_hwlock - Free Synx HW lock
+ *
+ * @return Zero on success, negative error on failure.
+ */
+int synx_global_free_synx_hwlock(void);
+
+/**
  * synx_global_map_core_id - Map Synx core ID to IPC Lite host
  *
  * @param id : Core Id to map
@@ -109,6 +116,13 @@ int synx_global_mem_init(void);
  * @return IPC host ID.
  */
 u32 synx_global_map_core_id(enum synx_core_id id);
+
+/**
+ * synx_global_memrory_is_empty - Check if global memory is empty
+ *
+ * @return SYNX_SUCCESS if empty, error otherwise.
+ */
+int synx_global_memory_is_empty(void);
 
 /**
  * synx_global_alloc_index - Allocate new global entry

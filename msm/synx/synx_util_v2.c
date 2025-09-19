@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/slab.h>
@@ -331,6 +331,30 @@ void synx_util_object_destroy(struct synx_coredata *synx_obj)
 	kfree(synx_obj);
 	dprintk(SYNX_MEM, "released synx object %pK\n", synx_obj);
 }
+
+
+int synx_util_local_map_is_empty(unsigned long *bitmap, unsigned int size)
+{
+	u32 index = 0;
+
+	if (!bitmap)
+		return -SYNX_NOMEM;
+
+	index = find_next_bit((unsigned long *)bitmap,
+			size, index+1);
+
+	if (index >= size)
+		return SYNX_SUCCESS;
+
+	while (index < size) {
+		dprintk(SYNX_MEM, "local index being used %d\n", index);
+		index = find_next_bit((unsigned long *)(bitmap),
+				size, index + 1);
+	}
+
+	return -SYNX_INVALID;
+}
+
 
 long synx_util_get_free_handle(unsigned long *bitmap, unsigned int size)
 {
