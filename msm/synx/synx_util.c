@@ -105,7 +105,8 @@ int synx_util_init_coredata(struct synx_coredata *synx_obj,
 
 		synx_obj->fence = fence;
 		dprintk(SYNX_MEM,
-			"allocated backing fence %pK\n", fence);
+			"allocated backing fence %pK, context %llu seqno %llu\n",
+			fence, dma_context, seq);
 
 		entry = kzalloc(sizeof(*entry), GFP_KERNEL);
 		if (IS_ERR_OR_NULL(entry)) {
