@@ -234,7 +234,8 @@ struct synx_native {
 	DECLARE_BITMAP(bitmap, SYNX_MAX_OBJS);
 };
 
-struct synx_cdsp_ssr {
+struct synx_ssr {
+	enum synx_core_id core_id;
 	u64 ssrcnt;
 	void *handle;
 	struct notifier_block nb;
@@ -252,7 +253,10 @@ struct synx_device {
 	struct dentry *debugfs_root;
 	struct list_head error_list;
 	struct mutex error_lock;
-	struct synx_cdsp_ssr cdsp_ssr;
+	struct synx_ssr cdsp_ssr;
+#if IS_ENABLED(CONFIG_TARGET_ENABLE_ADSP)
+	struct synx_ssr adsp_ssr;
+#endif
 };
 
 extern struct synx_ops synx_hwfence_ops;

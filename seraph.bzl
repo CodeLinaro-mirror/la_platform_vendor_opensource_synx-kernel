@@ -13,5 +13,6 @@ def define_seraph():
         config_options = [
             "TARGET_SYNX_ENABLE",
             "CONFIG_QTI_HW_FENCE",
+        #    "CONFIG_TARGET_ENABLE_ADSP",
         ],
     )
