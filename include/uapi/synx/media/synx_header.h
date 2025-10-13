@@ -464,6 +464,41 @@ struct synx_release_n_info {
 };
 
 /**
+ * struct synx_userpayload_indv_info - Payload information for individual
+ *                                     synx objects from user space
+ *
+ * @synx_obj  : Sync object for which payload has to be registered for
+ * @status    : status of synx_obj
+ * @payload   : Pointer to user payload
+ * @result    : Result of the callback registration and deregistration
+ * @reserved  : Reserved
+ */
+struct synx_userpayload_indv_info {
+	__u32 synx_obj;
+	__u32 status;
+	__u64 payload[SYNX_USER_PAYLOAD_SIZE];
+	__s32 result;
+	__u32 reserved;
+};
+
+/**
+ * struct synx_userpayload_n_info - Payload info from user space
+ *
+ * @type     : Register payload params type
+ * @reserved : Reserved
+ * @indv     : Params to register payload for an individual handle
+ * @arr      : Params to register payload for an array of handles
+ */
+struct synx_userpayload_n_info {
+	__u32 type;
+	__u32 reserved;
+	union {
+		struct synx_userpayload_indv_info indv;
+		struct synx_op_arr_info arr;
+	};
+};
+
+/**
  * struct synx_recover_info - synx recover information
  *
  * @id       : Client identifier
@@ -500,4 +535,6 @@ struct synx_recover_info {
 #define SYNX_IMPORT_V2                       18
 #define SYNX_IMPORT_ARR_V2                   19
 #define SYNX_MERGE_N                         20
+#define SYNX_REGISTER_PAYLOAD_N              22
+#define SYNX_DEREGISTER_PAYLOAD_N            23
 #endif /* __UAPI_SYNX_H__ */

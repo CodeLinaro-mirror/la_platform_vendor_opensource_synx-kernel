@@ -141,6 +141,7 @@ int synx_util_alloc_cb_entry(struct synx_client *client,
 int synx_util_clear_cb_entry(struct synx_client *client,
 			struct synx_client_cb *cb);
 void synx_util_default_user_callback(u32 h_synx, int status, void *data);
+void synx_util_user_callback_v2(struct synx_callback_response *cb_response);
 void synx_util_callback_dispatch(struct synx_coredata *synx_obj, u32 state);
 void synx_util_cb_dispatch(struct work_struct *cb_dispatch);
 

@@ -103,6 +103,9 @@ struct synx_kernel_payload {
 	void *data;
 	synx_user_callback_t cb_func;
 	synx_user_callback_t cancel_cb_func;
+	synx_user_callback_v2_t cb_func_v2;
+	synx_user_callback_v2_t cancel_cb_func_v2;
+	u64 client_data;
 };
 
 struct synx_timer_cb_data {
@@ -280,8 +283,14 @@ int synx_internal_create(struct synx_session *session, struct synx_create_params
 
 int synx_internal_async_wait(struct synx_session *session, struct synx_callback_params *params);
 
+int synx_internal_async_wait_n(struct synx_session *session,
+	struct synx_callback_n_params *params);
+
 int synx_internal_cancel_async_wait(struct synx_session *session,
 	struct synx_callback_params *params);
+
+int synx_internal_cancel_async_wait_n(struct synx_session *session,
+	struct synx_callback_n_params *params);
 
 int synx_internal_signal(struct synx_session *session, u32 h_synx,
 	enum synx_signal_status status);
