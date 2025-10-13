@@ -78,9 +78,9 @@ static void synx_global_print_data(
 {
 	int i = 0;
 
-	dprintk(SYNX_VERB, "%s: status %u, handle %u, refcount %u",
+	dprintk(SYNX_VERB, "%s: status %u, handle %u, refcount %u, h_hwfence %u",
 		func, synx_g_obj->status,
-		synx_g_obj->handle, synx_g_obj->refcount);
+		synx_g_obj->handle, synx_g_obj->refcount, synx_g_obj->h_hwfence);
 
 	dprintk(SYNX_VERB, "%s: subscribers %u, waiters %u, pending %u",
 		func, synx_g_obj->subscribers, synx_g_obj->waiters,
@@ -319,19 +319,34 @@ int synx_global_init_coredata(u32 h_synx, u64 security_key)
 	synx_g_obj = synx_fetch_global_coredata_object(idx);
 	if (synx_g_obj->status != 0 || synx_g_obj->refcount != 0 ||
 		synx_g_obj->subscribers != 0 || synx_g_obj->handle != 0 ||
-		synx_g_obj->parents[0] != 0) {
+		synx_g_obj->num_child != 0 || synx_g_obj->waiters != 0 ||
+		synx_g_obj->h_hwfence != 0 || synx_g_obj->parents[0] != 0 ||
+		synx_g_obj->parents[1] != 0 || synx_g_obj->parents[2] != 0 ||
+		synx_g_obj->parents[3] != 0) {
 		dprintk(SYNX_ERR,
 				"entry not cleared for idx %u,\n"
 				"synx_g_obj->status %d,\n"
 				"synx_g_obj->refcount %d,\n"
 				"synx_g_obj->subscribers %d,\n"
 				"synx_g_obj->handle %u,\n"
-				"synx_g_obj->parents[0] %d\n",
+				"synx_g_obj->num_child %d,\n"
+				"synx_g_obj->waiters %d,\n"
+				"synx_g_obj->h_hwfence %u,\n"
+				"synx_g_obj->parents[0] %d,\n"
+				"synx_g_obj->parents[1] %d,\n"
+				"synx_g_obj->parents[2] %d,\n"
+				"synx_g_obj->parents[3] %d\n",
 				idx, synx_g_obj->status,
 				synx_g_obj->refcount,
 				synx_g_obj->subscribers,
 				synx_g_obj->handle,
-				synx_g_obj->parents[0]);
+				synx_g_obj->num_child,
+				synx_g_obj->waiters,
+				synx_g_obj->h_hwfence,
+				synx_g_obj->parents[0],
+				synx_g_obj->parents[1],
+				synx_g_obj->parents[2],
+				synx_g_obj->parents[3]);
 		synx_gmem_unlock(idx, &flags);
 		return -SYNX_INVALID;
 	}
