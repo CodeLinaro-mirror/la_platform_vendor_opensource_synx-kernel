@@ -29,6 +29,15 @@ register_synx_module(
 )
 
 register_synx_module(
+    name = "synx-stub",
+    path = "msm",
+    srcs = [
+        "synx/synx_stub.c",
+        "synx/synx_compat.c",
+    ],
+)
+
+register_synx_module(
     name = "ipclite",
     path = "msm",
     srcs = [
