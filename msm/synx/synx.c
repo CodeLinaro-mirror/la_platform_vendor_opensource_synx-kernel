@@ -560,26 +560,23 @@ int synx_native_signal_fence(struct synx_coredata *synx_obj,
 
 	spin_lock_irqsave(synx_obj->fence->lock, flags);
 	/* check the status again acquiring lock to avoid errors */
-	if (synx_util_get_object_status_locked(synx_obj) !=
-		SYNX_STATE_ACTIVE) {
-		spin_unlock_irqrestore(synx_obj->fence->lock, flags);
-		return -SYNX_ALREADY;
+	if (synx_util_get_object_status_locked(synx_obj)
+		== SYNX_STATE_ACTIVE) {
+		synx_obj->status = status;
+
+		if (status >= SYNX_DMA_FENCE_STATE_MAX)
+			status = SYNX_DMA_FENCE_STATE_MAX - 1;
+
+		/* set fence error to model {signal w/ error} */
+		if (status != SYNX_STATE_SIGNALED_SUCCESS)
+			dma_fence_set_error(synx_obj->fence, -status);
+
+		rc = dma_fence_signal_locked(synx_obj->fence);
+		if (rc)
+			dprintk(SYNX_ERR,
+				"signaling fence %pK failed=%d\n",
+				synx_obj->fence, rc);
 	}
-
-	synx_obj->status = status;
-
-	if (status >= SYNX_DMA_FENCE_STATE_MAX)
-		status = SYNX_DMA_FENCE_STATE_MAX - 1;
-
-	/* set fence error to model {signal w/ error} */
-	if (status != SYNX_STATE_SIGNALED_SUCCESS)
-		dma_fence_set_error(synx_obj->fence, -status);
-
-	rc = dma_fence_signal_locked(synx_obj->fence);
-	if (rc)
-		dprintk(SYNX_ERR,
-			"signaling fence %pK failed=%d\n",
-			synx_obj->fence, rc);
 	spin_unlock_irqrestore(synx_obj->fence->lock, flags);
 
 	return rc;
