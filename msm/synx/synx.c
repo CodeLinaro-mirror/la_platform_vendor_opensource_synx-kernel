@@ -2310,6 +2310,12 @@ int synx_internal_share_handle_status(
 	struct synx_import_indv_params *params,
 	u32 h_hwfence, u32 *signal_status)
 {
+	if (IS_ERR_OR_NULL(params)) {
+		dprintk(SYNX_ERR, "Invalid params received for hw-fence %u\n", h_hwfence);
+		return -SYNX_INVALID;
+	}
+	dprintk(SYNX_DBG,
+		"Registering fence %pK with hw-fence %u\n", params->fence, h_hwfence);
 	return synx_internal_get_handle_status(
 		params, h_hwfence, signal_status, true);
 }
@@ -3015,11 +3021,12 @@ void *synx_internal_get_dma_fence(u32 h_synx)
 		if (curr->g_handle == h_synx) {
 			fence = (void *)curr->key;
 			dma_fence_get((struct dma_fence *)curr->key);
-			break;
+			dprintk(SYNX_DBG,
+				"Retrieved fence %pK for synx handle %u\n", fence, h_synx);
+				break;
+			}
 		}
-	}
 	spin_unlock_bh(&synx_dev->native->fence_map_lock);
-
 	return fence;
 }
 
