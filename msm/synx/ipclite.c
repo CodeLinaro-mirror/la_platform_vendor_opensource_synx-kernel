@@ -46,11 +46,13 @@ static inline int is_feature_config(uint32_t ipclite_feature)
 
 static inline int is_debug_config(uint32_t ipclite_debug)
 {
-	if (!debug_status) {
+	int ret = ipclite_debug_control & ipclite_debug;
+
+	if (ret && !debug_status) {
 		pr_err("debug setup not initialized.");
 		return 0;
 	}
-	return ipclite_debug_control & ipclite_debug;
+	return ret;
 }
 
 static inline bool is_host_enabled(uint32_t host)
