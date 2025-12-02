@@ -3,53 +3,28 @@
  * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #include <linux/module.h>
+#include <linux/cdev.h>
+#include <linux/device.h>
 #include <linux/version.h>
 #include "synx_api.h"
 #include "synx_hwfence.h"
-#include "synx_private.h"
-#include "synx_debugfs.h"
+#include "synx_internal.h"
+#include "synx_compat_debug.h"
 #include "synx_ioctl.h"
+#include "synx_interop.h"
 
-int synx_debug = SYNX_ERR | SYNX_WARN | SYNX_INFO;
 
-struct synx_device *synx_dev;
-#ifdef CONFIG_DEBUG_FS
-extern const struct file_operations synx_test_fops;
-#endif
+struct synx_interface_device *synx_dev;
 
-struct synx_session *synx_internal_initialize(
-	struct synx_initialization_params *params)
-{
-	return NULL;
-}
-
-int synx_internal_recover(enum synx_client_id id)
-{
-	return -SYNX_NOSUPPORT;
-}
-
-void synx_util_default_user_callback(u32 h_synx,
-	int status, void *data)
-{
-	dprintk(SYNX_ERR, "unimplemented user callback function\n");
-}
-
-void synx_util_user_callback_v2(struct synx_callback_response *cb_response)
-{
-	dprintk(SYNX_ERR, "unimplemented user v2 callback function\n");
-}
-
-int synx_bind(struct synx_session *session,
-	u32 h_synx,
-	struct synx_external_desc_v2 external_sync)
-{
-	return -SYNX_NOSUPPORT;
-}
+struct synx_hwfence_interops hwfence_shared_ops = { NULL };
+struct synx_hwfence_interops synx_shared_ops = { NULL };
 
 static const struct file_operations synx_fops = {
 	.owner = THIS_MODULE,
 	.open  = synx_open,
+	.read  = synx_read,
 	.release = synx_close,
+	.poll  = synx_poll,
 	.unlocked_ioctl = synx_ioctl,
 #ifdef CONFIG_COMPAT
 	.compat_ioctl = synx_ioctl,
@@ -99,32 +74,34 @@ static int __init synx_init(void)
 		goto err_device_create;
 	}
 
-#ifdef CONFIG_DEBUG_FS
-	synx_dev->debugfs_root = debugfs_create_dir("synx_debug", NULL);
-	if (IS_ERR_OR_NULL(synx_dev->debugfs_root)) {
-		dprintk(SYNX_ERR, "Failed to create debugfs for synx\n");
-		goto err_debugfs_create;
-	}
-	if (!debugfs_create_file("synx_test_ioctl", 0644, synx_dev->debugfs_root, synx_dev,
-			&synx_test_fops)) {
-		dprintk(SYNX_ERR, "Failed to create debugfs test ioctl file for synx\n");
-		debugfs_remove_recursive(synx_dev->debugfs_root);
-		goto err_debugfs_create;
-	}
-	debugfs_create_u32("debug_level", 0644, synx_dev->debugfs_root, &synx_debug);
-#endif /* CONFIG_DEBUG_FS */
-
-	/* ignore error because Synx API is still functional even if an error is returned */
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+	synx_dev->debugfs_root = synx_interface_init_debugfs_dir(synx_dev);
+#endif/* CONFIG_DEBUG_FS */
+#if IS_ENABLED(CONFIG_QTI_HW_FENCE)
 	rc = synx_hwfence_init_ops(&synx_hwfence_ops);
 	if (rc)
-		dprintk(SYNX_DBG, "hwfence is not supported through synx api, err=%d\n", rc);
+		dprintk(SYNX_WARN, "synx-hwfence init failed, err=%d\n", rc);
+#endif /* CONFIG_QTI_HW_FENCE */
+
+#if IS_ENABLED(CONFIG_SYNX_IMPL)
+	rc = synx_internal_init_ops(&synx_internal_ops);
+	if (rc)
+		dprintk(SYNX_WARN, "synx_impl driver init ops failed, err=%d\n", rc);
+
+	/* Populate synx_shared_ops from synx_core if available */
+	synx_populate_shared_ops(&synx_shared_ops);
+	rc = synx_hwfence_init_interops(&synx_shared_ops, &hwfence_shared_ops);
+	if (rc) {
+		dprintk(SYNX_ERR, "Hw fence inter-op mapping failed, err %d\n", rc);
+	} else {
+		/* Pass hwfence operations to synx_core for compatibility */
+		synx_set_hwfence_ops(&hwfence_shared_ops);
+	}
+#endif /* CONFIG_SYNX_IMPL */
+	dprintk(SYNX_INFO, "synx interface module loaded\n");
 
 	return 0;
 
-#ifdef CONFIG_DEBUG_FS
-err_debugfs_create:
-	device_destroy(synx_dev->class, synx_dev->dev);
-#endif /* CONFIG_DEBUG_FS */
 err_device_create:
 	class_destroy(synx_dev->class);
 err_class_create:
@@ -139,10 +116,10 @@ alloc_fail:
 
 static void __exit synx_exit(void)
 {
-	if (!IS_ERR_OR_NULL(synx_dev)) {
-#ifdef CONFIG_DEBUG_FS
-		debugfs_remove_recursive(synx_dev->debugfs_root);
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+	synx_interface_remove_debugfs_dir(synx_dev);
 #endif /* CONFIG_DEBUG_FS */
+	if (!IS_ERR_OR_NULL(synx_dev)) {
 		device_destroy(synx_dev->class, synx_dev->dev);
 		class_destroy(synx_dev->class);
 		cdev_del(&synx_dev->cdev);
@@ -150,6 +127,7 @@ static void __exit synx_exit(void)
 		kfree(synx_dev);
 		synx_dev = NULL;
 	}
+	dprintk(SYNX_INFO, "synx interface module unloaded\n");
 }
 
 module_init(synx_init);

@@ -6,8 +6,8 @@
 #include <linux/types.h>
 #include "synx_api.h"
 #include "synx_hwfence.h"
-#include "synx_private.h"
-#include "synx_debugfs.h"
+#include "synx_internal.h"
+#include "synx_compat_debug.h"
 
 struct synx_ops synx_hwfence_ops = {
 	.uninitialize = NULL,

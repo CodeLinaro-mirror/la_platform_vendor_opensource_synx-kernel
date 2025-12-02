@@ -10,7 +10,8 @@
 #include <linux/uaccess.h>
 #include <linux/vmalloc.h>
 
-#include "synx_debugfs.h"
+#include "synx_compat_debug.h"
+#include "synx_err.h"
 
 #define DMA_MAX_OBJS           4096
 

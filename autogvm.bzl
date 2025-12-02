@@ -6,10 +6,11 @@ def define_autogvm():
         target = "autogvm",
         registry = synx_modules,
         modules = [
-            "synx-stub",
+            "synx-driver",
         ],
 
         config_options = [
+            "TARGET_SYNX_ENABLE",
             "CONFIG_QTI_HW_FENCE",
         ],
     )

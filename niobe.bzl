@@ -7,11 +7,10 @@ def define_niobe():
         registry = synx_modules,
         modules = [
             "synx-driver",
-            "ipclite",
-            "ipclite_test",
         ],
         config_options = [
             "TARGET_SYNX_ENABLE",
             "CONFIG_QTI_HW_FENCE",
+            "CONFIG_SYNX_IMPL",
         ],
     )

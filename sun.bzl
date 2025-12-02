@@ -7,8 +7,6 @@ def define_sun():
         registry = synx_modules,
         modules = [
             "synx-driver",
-            "ipclite",
-            "ipclite_test",
         ],
         config_options = [
             "TARGET_SYNX_ENABLE",

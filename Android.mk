@@ -19,17 +19,16 @@ KBUILD_OPTIONS += BOARD_PLATFORM=$(TARGET_BOARD_PLATFORM)
 ifeq ($(CONFIG_QTI_HW_FENCE),y)
 KBUILD_OPTIONS += KBUILD_EXTRA_SYMBOLS+=$(PWD)/$(call intermediates-dir-for,DLKM,hw-fence-module-symvers)/Module.symvers
 endif
+ifeq ($(CONFIG_SYNX_IMPL),y)
+KBUILD_OPTIONS += KBUILD_EXTRA_SYMBOLS+=$(PWD)/$(call intermediates-dir-for,DLKM,synx-impl-module-symvers)/Module.symvers
+endif
 ###########################################################
 
 DLKM_DIR   := $(TOP)/device/qcom/common/dlkm
 
 LOCAL_PATH := $(call my-dir)
 LOCAL_MODULE_DDK_BUILD := true
-ifeq ($(TARGET_BOARD_PLATFORM), gen5)
-LOCAL_MODULE_KO_DIRS := msm/synx/synx-stub.ko
-else
-LOCAL_MODULE_KO_DIRS := msm/synx/synx-driver.ko msm/synx/ipclite.ko msm/synx/test/ipclite_test.ko
-endif
+LOCAL_MODULE_KO_DIRS := msm/synx/synx-driver.ko
 
 include $(CLEAR_VARS)
 # For incremental compilation
@@ -46,41 +45,18 @@ include $(CLEAR_VARS)
 # For incremental compilation
 LOCAL_SRC_FILES   := $(wildcard $(LOCAL_PATH)/**/*) $(wildcard $(LOCAL_PATH)/*)
 $(info LOCAL_SRC_FILES = $(LOCAL_SRC_FILES))
-ifeq ($(TARGET_BOARD_PLATFORM), gen5)
-LOCAL_MODULE      := synx-stub.ko
-LOCAL_MODULE_KBUILD_NAME := msm/synx/synx-stub.ko
-else
 LOCAL_MODULE      := synx-driver.ko
 LOCAL_MODULE_KBUILD_NAME := msm/synx/synx-driver.ko
-endif
 LOCAL_MODULE_PATH := $(KERNEL_MODULES_OUT)
 ifeq ($(CONFIG_QTI_HW_FENCE),y)
 LOCAL_REQUIRED_MODULES    := hw-fence-module-symvers
 LOCAL_ADDITIONAL_DEPENDENCIES := $(call intermediates-dir-for,DLKM,hw-fence-module-symvers)/Module.symvers
 endif
-include $(DLKM_DIR)/Build_external_kernelmodule.mk
-
-ifneq ($(TARGET_BOARD_PLATFORM), gen5)
-include $(CLEAR_VARS)
-# For incremental compilation
-LOCAL_SRC_FILES   := $(wildcard $(LOCAL_PATH)/**/*) $(wildcard $(LOCAL_PATH)/*)
-$(info LOCAL_SRC_FILES = $(LOCAL_SRC_FILES))
-LOCAL_MODULE      := ipclite.ko
-LOCAL_MODULE_KBUILD_NAME := msm/synx/ipclite.ko
-LOCAL_MODULE_PATH := $(KERNEL_MODULES_OUT)
-#BOARD_VENDOR_KERNEL_MODULES += $(LOCAL_MODULE_PATH)/$(LOCAL_MODULE)
-include $(DLKM_DIR)/Build_external_kernelmodule.mk
-
-include $(CLEAR_VARS)
-# For incremental compilation
-LOCAL_SRC_FILES   := $(wildcard $(LOCAL_PATH)/**/*) $(wildcard $(LOCAL_PATH)/*)
-$(info LOCAL_SRC_FILES = $(LOCAL_SRC_FILES))
-LOCAL_MODULE      := ipclite_test.ko
-LOCAL_MODULE_KBUILD_NAME := msm/synx/test/ipclite_test.ko
-LOCAL_MODULE_PATH := $(KERNEL_MODULES_OUT)
-#BOARD_VENDOR_KERNEL_MODULES += $(LOCAL_MODULE_PATH)/$(LOCAL_MODULE)
-include $(DLKM_DIR)/Build_external_kernelmodule.mk
+ifeq ($(CONFIG_SYNX_IMPL),y)
+LOCAL_REQUIRED_MODULES    := synx-impl-module-symvers
+LOCAL_ADDITIONAL_DEPENDENCIES := $(call intermediates-dir-for,DLKM,synx-impl-module-symvers)/Module.symvers
 endif
+include $(DLKM_DIR)/Build_external_kernelmodule.mk
 # print out variables
 #$(info KBUILD_OPTIONS = $(KBUILD_OPTIONS))
 $(info LOCAL_ADDITIONAL_DEPENDENCY = $(LOCAL_ADDITIONAL_DEPENDENCY))

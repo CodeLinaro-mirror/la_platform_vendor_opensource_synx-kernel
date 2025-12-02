@@ -9,33 +9,10 @@ register_synx_module(
     name = "synx-driver",
     path = "msm",
     srcs = [
-        "synx/synx.c",
-        "synx/synx_global.c",
-        "synx/synx_util.c",
-        "synx/synx_debugfs.c",
-        "synx/synx_debugfs_util.c",
         "synx/synx_compat.c",
-        "synx/synx_test_ioctl.c",
+        "synx/synx_compat_debug.c",
         "synx/synx_ioctl.c",
-    ],
-
-    # Configs are handled by config_options = []
-    config_deps = {
-        "CONFIG_QTI_HW_FENCE": [
-            "//vendor/qcom/opensource/mm-drivers/hw_fence:%b_msm_hw_fence",
-            "//vendor/qcom/opensource/mm-drivers/hw_fence:hw_fence_headers",
-        ],
-    },
-    deps = ["ipclite"],
-)
-
-register_synx_module(
-    name = "synx-stub",
-    path = "msm",
-    srcs = [
         "synx/synx_stub.c",
-        "synx/synx_compat.c",
-        "synx/synx_ioctl.c",
         "synx/synx_test_ioctl.c",
     ],
 
@@ -45,21 +22,8 @@ register_synx_module(
             "//vendor/qcom/opensource/mm-drivers/hw_fence:%b_msm_hw_fence",
             "//vendor/qcom/opensource/mm-drivers/hw_fence:hw_fence_headers",
         ],
+        "CONFIG_SYNX_IMPL": [
+            "//vendor/qcom/opensource/synx-core:%b_synx-impl_synx",
+        ],
     },
-)
-
-register_synx_module(
-    name = "ipclite",
-    path = "msm",
-    srcs = [
-        "synx/ipclite.c",
-    ],
-)
-register_synx_module(
-    name = "ipclite_test",
-    path = "msm",
-    srcs = [
-        "synx/test/ipclite_test.c",
-    ],
-    deps = ["ipclite"],
 )

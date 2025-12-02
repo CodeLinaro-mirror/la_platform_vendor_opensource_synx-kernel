@@ -6,9 +6,8 @@
 #include <linux/sync_file.h>
 #include "synx_api.h"
 #include "synx_ioctl.h"
-#include "synx_debugfs.h"
-#include "synx_private.h"
-#include "synx_util.h"
+#include "synx_internal.h"
+#include "synx_compat_debug.h"
 
 static int synx_create_sync_fd(struct dma_fence *fence)
 {

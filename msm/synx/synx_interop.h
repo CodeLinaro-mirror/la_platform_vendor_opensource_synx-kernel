@@ -1,14 +1,39 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2023-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef __SYNX_INTEROP_API_H__
 #define __SYNX_INTEROP_API_H__
 
 #include "synx_api.h"
-#include "synx_global.h"
 #include <linux/dma-fence.h>
+
+/**
+ * enum synx_core_id - Synx core IDs
+ *
+ * SYNX_CORE_APSS     : APSS core
+ * SYNX_CORE_NSP      : NSP core
+ * SYNX_CORE_EVA      : EVA core
+ * SYNX_CORE_IRIS     : IRIS core
+ * SYNX_CORE_ICP      : ICP core
+ * SYNX_CORE_SOCCP    : SoCCP core
+ * SYNX_CORE_ICP1     : OFE ICP core
+ * SYNX_CORE_GMU      : GMU core
+ * SYNX_CORE_ADSP     : ADSP (LPASS) core
+ */
+enum synx_core_id {
+	SYNX_CORE_APSS = 0,
+	SYNX_CORE_NSP,
+	SYNX_CORE_EVA,
+	SYNX_CORE_IRIS,
+	SYNX_CORE_ICP,
+	SYNX_CORE_SOCCP,
+	SYNX_CORE_ICP1,
+	SYNX_CORE_GMU,
+	SYNX_CORE_ADSP,
+	SYNX_CORE_MAX,
+};
 
 /**
  * SYNX_NATIVE_FENCE_FLAG_ENABLED_BIT - synx-native fence is enabled for the dma_fence
