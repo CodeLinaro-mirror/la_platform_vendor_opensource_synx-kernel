@@ -1069,6 +1069,14 @@ int synx_global_merge(u32 *idx_list, u32 num_list, u32 p_idx)
 			}
 		}
 
+		if (i >= SYNX_GLOBAL_MAX_PARENTS) {
+			rc = -SYNX_NOMEM;
+			dprintk(SYNX_ERR, "Number of parents exceeded the limit for handle %u\n",
+				synx_g_obj->handle);
+			synx_gmem_unlock(idx, &flags);
+			goto fail;
+		}
+
 		if (synx_g_obj->status != SYNX_STATE_ACTIVE) {
 			if (synx_g_obj->num_child == 0)
 				num_child_signaled += 1;
@@ -1083,13 +1091,6 @@ int synx_global_merge(u32 *idx_list, u32 num_list, u32 p_idx)
 		dprintk(SYNX_MEM, "synx_obj->status %d parent status %d\n",
 			synx_g_obj->status, parent_status);
 		synx_gmem_unlock(idx, &flags);
-
-		if (i >= SYNX_GLOBAL_MAX_PARENTS) {
-			rc = -SYNX_NOMEM;
-			dprintk(SYNX_ERR, "Number of parents exceeded the limit for handle %u\n",
-				synx_g_obj->handle);
-			goto fail;
-		}
 
 		j++;
 	}
