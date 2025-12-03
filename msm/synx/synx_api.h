@@ -1170,7 +1170,7 @@ int synx_cancel_async_wait_n(struct synx_session *session,
 int synx_signal(struct synx_session *session, u32 h_synx,
 	enum synx_signal_status status);
 
-/*
+/**
  * synx_signal_n – Signals n synx objects
  *
  * Function signals an individual handle or N handles
@@ -1187,6 +1187,8 @@ int synx_signal_n(struct synx_session *session, struct synx_signal_n_params *par
  *
  * This function will merge multiple synx objects into a synx group.
  *
+ * A handle can be merged maximum 4 times including nested merge.
+ *
  * @param session : Session ptr (returned from synx_initialize)
  * @param params  : Merge params
  *
@@ -1198,6 +1200,8 @@ int synx_merge(struct synx_session *session, struct synx_merge_params *params);
  * synx_merge_n - Merges multiple synx objects with synx_merge_n params
  *
  * This function will merge multiple synx objects into a synx group based on synx_merge_type.
+ *
+ * A handle can be merged maximum 4 times including nested merge.
  *
  * @param session : Session ptr (returned from synx_initialize)
  * @param params  : Merge_n params
@@ -1222,7 +1226,7 @@ int synx_merge_n(struct synx_session *session, struct synx_merge_n_params *param
  */
 int synx_wait(struct synx_session *session, u32 h_synx, u64 timeout_ms);
 
-/*
+/**
  * synx_read_n - Reads n synx objects
  *
  * Function reads an individual handle, signaling status, and 64-bit client_data
@@ -1252,7 +1256,11 @@ int synx_get_status(struct synx_session *session, u32 h_synx);
 /**
  * synx_import - Imports (looks up) synx object from given handle or fence,
  * or creates a new handle if the fence passed is NULL.
- * *
+ *
+ * The creating client must ensure that the handle is not released
+ * until the importing client has successfully completed the import.
+ * Releasing the handle prematurely may result in import failure or undefined behavior.
+ *
  * @param session : Session ptr (returned from synx_initialize)
  * @param params  : Pointer to import params
  *
