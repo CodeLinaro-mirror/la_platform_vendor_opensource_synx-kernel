@@ -44,7 +44,8 @@ define_seraph()
 
 load(":art.bzl", "define_art")
 
-define_art()
+define_art("art")
+define_art("art16k")
 
 load(":autogvm.bzl", "define_autogvm")
 

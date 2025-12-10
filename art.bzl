@@ -1,9 +1,9 @@
 load(":synx_modules.bzl", "synx_modules")
 load(":synx_module_build.bzl", "define_consolidate_perf_modules")
 
-def define_art():
+def define_art(target):
     define_consolidate_perf_modules(
-        target = "art",
+        target = target,
         registry = synx_modules,
         modules = [
             "synx-driver",
