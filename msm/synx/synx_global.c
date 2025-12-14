@@ -444,7 +444,10 @@ int synx_global_set_waiting_core(u32 idx, enum synx_core_id id)
 		return rc;
 	}
 	synx_g_obj = synx_fetch_global_coredata_object(idx);
-	synx_g_obj->waiters |= (1UL << id);
+	if (synx_g_obj->handle && synx_g_obj->refcount)
+		synx_g_obj->waiters |= (1UL << id);
+	else
+		dprintk(SYNX_WARN, "Entry %u already cleared\n", idx);
 	synx_gmem_unlock(idx, &flags);
 
 	return SYNX_SUCCESS;
