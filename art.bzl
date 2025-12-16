@@ -11,6 +11,7 @@ def define_art():
             "ipclite_test",
         ],
         config_options = [
-            "TARGET_SYNX_ENABLE"
+            "TARGET_SYNX_ENABLE",
+            "CONFIG_QTI_HW_FENCE",
         ],
     )
