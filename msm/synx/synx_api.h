@@ -107,12 +107,21 @@ enum synx_init_flags {
  *                            (NOT SUPPORTED)
  * SYNX_IMPORT_REUSABLE     : Flag to inform that this synx handle supports repeated signaling.
  *                            Client must pass:
- *                            a. null ptr through fence variable to create reusable fence
+ *                            a. null ptr through fence variable to create reusable fence.
+ *                               To create synx reusable handle client must set flag as follows:
+ *                               SYNX_IMPORT_GLOBAL_FENCE | SYNX_IMPORT_REUSABLE
+ *                               to create a reusable synx handle as a global synx handle.
+ *                               SYNX_IMPORT_LOCAL_FENCE | SYNX_IMPORT_REUSABLE
+ *                               to create a reusable synx handle as a local synx handle.
  *                            b. unsignaled synx handle through fence variable to import
  *                               reusable fence
  *                            If client passes SYNX_IMPORT_DMA_FENCE with SYNX_IMPORT_REUSABLE
- *                            then synx_import returns a failure as reusable fence dosen't
+ *                            then synx_import returns a failure as reusable fence doesn't
  *                            have native dma-fence support.
+ *                            Synchronous wait (using synx_wait) and merge
+ *                            (using synx_merge/synx_merge_n) operations on
+ *                            Reusable fence are NOT SUPPORTED.
+ *                            Interop on Reusable fence is NOT SUPPORTED.
  */
 enum synx_import_flags {
 	SYNX_IMPORT_LOCAL_FENCE  = 0x01,
@@ -865,12 +874,14 @@ struct synx_read_n_params {
  * SYNX_GET_FENCE_PARAMS      : Get native fence associated with synx object
  * SYNX_GET_CLIENT_DATA       : Get 64-bit client metadata associated with synx object
  * SYNX_GET_MAX_GLOBAL_FENCES : Get maximum number of fences used for cross-core signaling
+ * SYNX_GET_IS_REUSABLE_FENCE : Get handle type, whether it is reusable or non reusable fence
  */
 enum synx_get_type {
 	SYNX_GET_STATUS_PARAMS = 0x01,
 	SYNX_GET_FENCE_PARAMS = 0x02,
 	SYNX_GET_CLIENT_DATA = 0x03,
 	SYNX_GET_MAX_GLOBAL_FENCES = 0x04,
+	SYNX_GET_IS_REUSABLE_FENCE = 0x05,
 };
 
 /**
@@ -883,6 +894,8 @@ enum synx_get_type {
  * @client_data       : 64-bit client metadata associated with synx object, filled by function call
  * @max_global_fences : maximum number of fences used for cross-core signaling, filled by
  *                      function call
+ * @is_reusable       : 32-bit variable indicating if synx object is a reusable fence, filled by
+ *                      function call.
  */
 struct synx_get_params {
 	enum synx_get_type type;
@@ -892,6 +905,7 @@ struct synx_get_params {
 		void *fence;
 		u64 client_data;
 		u64 max_global_fences;
+		u32 is_reusable;
 	};
 };
 

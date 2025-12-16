@@ -364,6 +364,7 @@ struct synx_fence_fd {
  * @fd                : native fence associated with synx object
  * @client_data       : 64-bit client metadata associated with synx object
  * @max_global_fences : maximum number of fences used for cross-core signaling
+ * @is_reusable       : 32-bit variable indicating if synx object is a reusable fence
  * @reserved          : Reserved
  */
 struct synx_get_info {
@@ -377,6 +378,7 @@ struct synx_get_info {
 		__s32 fd;
 		__u64 client_data;
 		__u64 max_global_fences;
+		__u32 is_reusable;
 	};
 	union{
 		__u64 reserved;
