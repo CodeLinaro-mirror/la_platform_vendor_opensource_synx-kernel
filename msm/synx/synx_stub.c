@@ -34,6 +34,11 @@ void synx_util_default_user_callback(u32 h_synx,
 	dprintk(SYNX_ERR, "unimplemented user callback function\n");
 }
 
+void synx_util_user_callback_v2(struct synx_callback_response *cb_response)
+{
+	dprintk(SYNX_ERR, "unimplemented user v2 callback function\n");
+}
+
 int synx_bind(struct synx_session *session,
 	u32 h_synx,
 	struct synx_external_desc_v2 external_sync)
