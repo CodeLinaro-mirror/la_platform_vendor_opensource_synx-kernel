@@ -141,3 +141,5 @@ def define_consolidate_perf_modules(target, registry, modules, config_options = 
     define_target_variant_modules(target, "consolidate", registry, modules, config_options)
     define_target_variant_modules(target, "perf", registry, modules, config_options)
     define_target_variant_modules(target, "gki", registry, modules, config_options)
+    define_target_variant_modules(target, "debug-defconfig", registry, modules, config_options)
+    define_target_variant_modules(target, "defconfig", registry, modules, config_options)

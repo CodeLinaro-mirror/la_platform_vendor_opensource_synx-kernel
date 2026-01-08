@@ -26,7 +26,7 @@ DLKM_DIR   := $(TOP)/device/qcom/common/dlkm
 LOCAL_PATH := $(call my-dir)
 LOCAL_MODULE_DDK_BUILD := true
 ifeq ($(TARGET_BOARD_PLATFORM), gen5)
-LOCAL_MODULE_KO_DIRS := msm/synx-driver.ko
+LOCAL_MODULE_KO_DIRS := msm/synx/synx-stub.ko
 else
 LOCAL_MODULE_KO_DIRS := msm/synx/synx-driver.ko msm/synx/ipclite.ko msm/synx/test/ipclite_test.ko
 endif
@@ -46,10 +46,11 @@ include $(CLEAR_VARS)
 # For incremental compilation
 LOCAL_SRC_FILES   := $(wildcard $(LOCAL_PATH)/**/*) $(wildcard $(LOCAL_PATH)/*)
 $(info LOCAL_SRC_FILES = $(LOCAL_SRC_FILES))
-LOCAL_MODULE      := synx-driver.ko
 ifeq ($(TARGET_BOARD_PLATFORM), gen5)
-LOCAL_MODULE_KBUILD_NAME := msm/synx-driver.ko
+LOCAL_MODULE      := synx-stub.ko
+LOCAL_MODULE_KBUILD_NAME := msm/synx/synx-stub.ko
 else
+LOCAL_MODULE      := synx-driver.ko
 LOCAL_MODULE_KBUILD_NAME := msm/synx/synx-driver.ko
 endif
 LOCAL_MODULE_PATH := $(KERNEL_MODULES_OUT)
