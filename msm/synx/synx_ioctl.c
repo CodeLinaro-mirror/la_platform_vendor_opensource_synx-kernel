@@ -176,6 +176,65 @@ static int synx_handle_getstatus(struct synx_private_ioctl_arg *k_ioctl,
 	return SYNX_SUCCESS;
 }
 
+static int synx_handle_get(struct synx_private_ioctl_arg *k_ioctl,
+	struct synx_session *session)
+{
+	struct synx_get_info get_info;
+	struct synx_get_params params;
+	int32_t result = SYNX_SUCCESS;
+
+	if (k_ioctl->size != sizeof(get_info))
+		return -SYNX_INVALID;
+
+	if (copy_from_user(&get_info,
+			u64_to_user_ptr(k_ioctl->ioctl_ptr),
+			k_ioctl->size))
+		return -EFAULT;
+
+	params.type = get_info.type;
+	if (params.type == SYNX_GET_FENCE_PARAMS ||
+		params.type == SYNX_GET_STATUS_PARAMS ||
+		params.type == SYNX_GET_CLIENT_DATA) {
+		params.h_synx = get_info.synx_obj;
+	} else {
+		return -SYNX_INVALID;
+	}
+
+	result = synx_get(session, &params);
+
+	if (result != SYNX_SUCCESS)
+		return result;
+
+	if (get_info.type == SYNX_GET_FENCE_PARAMS) {
+		if (IS_ERR_OR_NULL(params.fence))
+			return -SYNX_INVALID;
+		get_info.fd = synx_create_sync_fd(params.fence);
+		/*
+		 * release additional reference taken in synx_get.
+		 * additional reference ensures the fence is valid and
+		 * does not race with handle/fence release.
+		 */
+		dma_fence_put(params.fence);
+		if (get_info.fd < 0)
+			return get_info.fd;
+	} else if (get_info.type == SYNX_GET_STATUS_PARAMS) {
+		get_info.synx_state = params.status;
+	} else if (get_info.type == SYNX_GET_CLIENT_DATA) {
+		get_info.client_data = params.client_data;
+	} else if (get_info.type == SYNX_GET_MAX_GLOBAL_FENCES) {
+		get_info.max_global_fences = params.max_global_fences;
+	} else {
+		return -SYNX_INVALID;
+	}
+
+	if (copy_to_user(u64_to_user_ptr(k_ioctl->ioctl_ptr),
+			&get_info,
+			k_ioctl->size))
+		return -EFAULT;
+
+	return SYNX_SUCCESS;
+}
+
 static int synx_handle_import(struct synx_private_ioctl_arg *k_ioctl,
 	struct synx_session *session)
 {
@@ -648,6 +707,89 @@ static int synx_handle_async_wait(
 	return rc;
 }
 
+static int synx_handle_async_wait_n(
+	struct synx_private_ioctl_arg *k_ioctl,
+	struct synx_session *session)
+{
+	int rc = 0;
+	struct synx_userpayload_n_info user_data = {0};
+	struct synx_callback_n_params params = {0};
+	struct synx_userpayload_indv_info *arr_params = NULL;
+	u32 idx = 0;
+
+	if (k_ioctl->size != sizeof(user_data))
+		return -SYNX_INVALID;
+
+	if (copy_from_user(&user_data, u64_to_user_ptr(k_ioctl->ioctl_ptr),
+			k_ioctl->size))
+		return -EFAULT;
+
+	if (user_data.type == SYNX_CALLBACK_ARR_PARAMS) {
+		if (user_data.arr.num_objs >= SYNX_MAX_OBJS || user_data.arr.num_objs == 0
+			|| user_data.arr.list == 0)
+			return -SYNX_INVALID;
+
+		arr_params = kcalloc(user_data.arr.num_objs, sizeof(*arr_params), GFP_KERNEL);
+		if (IS_ERR_OR_NULL(arr_params))
+			return -ENOMEM;
+
+		if (copy_from_user(arr_params,
+				u64_to_user_ptr(user_data.arr.list),
+				sizeof(*arr_params) * user_data.arr.num_objs)) {
+			kfree(arr_params);
+			return -EFAULT;
+		}
+		params.type = user_data.type;
+		params.arr.num_fences = user_data.arr.num_objs;
+		params.arr.list = kcalloc(params.arr.num_fences,
+					sizeof(struct synx_callback_indv_params), GFP_KERNEL);
+		if (IS_ERR_OR_NULL(params.arr.list)) {
+			kfree(arr_params);
+			return -ENOMEM;
+		}
+		for (idx = 0; idx < params.arr.num_fences; idx++) {
+			params.arr.list[idx].h_synx = arr_params[idx].synx_obj;
+			params.arr.list[idx].userdata = (void *)arr_params[idx].payload[0];
+			params.arr.list[idx].cb_func = synx_util_user_callback_v2;
+			params.arr.list[idx].timeout_ms = arr_params[idx].payload[2];
+		}
+		rc = synx_async_wait_n(session, &params);
+		if (rc) {
+			dprintk(SYNX_ERR, "user cb batch registration failed\n");
+			for (idx = 0; idx < params.arr.num_fences; idx++) {
+				arr_params[idx].result = params.arr.list[idx].result;
+				dprintk(SYNX_ERR, "Handle: %u async wait result: %d\n",
+					params.arr.list[idx].h_synx, params.arr.list[idx].result);
+			}
+		} else
+			dprintk(SYNX_DBG, "user cb batch registration successful\n");
+
+		if (copy_to_user(u64_to_user_ptr(user_data.arr.list),
+			arr_params,
+			sizeof(*arr_params) * user_data.arr.num_objs)) {
+			rc = -EFAULT;
+			dprintk(SYNX_ERR, "Copy to user failed for batch async wait.");
+		}
+		kfree(arr_params);
+		kfree(params.arr.list);
+	} else if (user_data.type == SYNX_CALLBACK_INDV_PARAMS) {
+		params.type = user_data.type;
+		params.indv.h_synx = user_data.indv.synx_obj;
+
+		params.indv.userdata = (void *)user_data.indv.payload[0];
+		params.indv.cb_func = synx_util_user_callback_v2;
+		params.indv.timeout_ms = user_data.indv.payload[2];
+
+		rc = synx_async_wait_n(session, &params);
+		if (rc)
+			dprintk(SYNX_ERR, "user cb indv registration failed\n");
+		else
+			dprintk(SYNX_DBG, "user cb indv registration successful\n");
+	}
+
+	return rc;
+}
+
 static int synx_handle_cancel_async_wait(
 	struct synx_private_ioctl_arg *k_ioctl,
 	struct synx_session *session)
@@ -673,6 +815,85 @@ static int synx_handle_cancel_async_wait(
 		dprintk(SYNX_ERR,
 			"user cb deregistration failed for handle %d\n",
 			user_data.synx_obj);
+
+	return rc;
+}
+
+static int synx_handle_cancel_async_wait_n(
+	struct synx_private_ioctl_arg *k_ioctl,
+	struct synx_session *session)
+{
+	int rc = 0;
+	struct synx_userpayload_n_info user_data = {0};
+	struct synx_callback_n_params params = {0};
+	struct synx_userpayload_indv_info *arr_params = NULL;
+	u32 idx = 0;
+
+	if (k_ioctl->size != sizeof(user_data))
+		return -SYNX_INVALID;
+
+	if (copy_from_user(&user_data,
+			u64_to_user_ptr(k_ioctl->ioctl_ptr),
+			k_ioctl->size))
+		return -EFAULT;
+
+	if (user_data.type == SYNX_CALLBACK_ARR_PARAMS) {
+		if (user_data.arr.num_objs >= SYNX_MAX_OBJS || user_data.arr.num_objs == 0
+			|| user_data.arr.list == 0)
+			return -SYNX_INVALID;
+		arr_params = kcalloc(user_data.arr.num_objs, sizeof(*arr_params), GFP_KERNEL);
+		if (IS_ERR_OR_NULL(arr_params))
+			return -ENOMEM;
+
+		if (copy_from_user(arr_params,
+				u64_to_user_ptr(user_data.arr.list),
+				sizeof(*arr_params) * user_data.arr.num_objs)) {
+			kfree(arr_params);
+			return -EFAULT;
+		}
+		params.type = user_data.type;
+		params.arr.num_fences = user_data.arr.num_objs;
+		params.arr.list = kcalloc(params.arr.num_fences,
+					sizeof(struct synx_callback_indv_params), GFP_KERNEL);
+		if (IS_ERR_OR_NULL(params.arr.list)) {
+			kfree(arr_params);
+			return -ENOMEM;
+		}
+		for (idx = 0; idx < params.arr.num_fences; idx++) {
+			params.arr.list[idx].h_synx = arr_params[idx].synx_obj;
+			params.arr.list[idx].userdata = (void *)arr_params[idx].payload[0];
+			params.arr.list[idx].cb_func = synx_util_user_callback_v2;
+		}
+		rc = synx_cancel_async_wait_n(session, &params);
+		if (rc) {
+			dprintk(SYNX_ERR, "user cb batch deregistration failed\n");
+			for (idx = 0; idx < params.arr.num_fences; idx++) {
+				arr_params[idx].result = params.arr.list[idx].result;
+				dprintk(SYNX_ERR, "Handle: %u cancel async wait result: %d\n",
+					params.arr.list[idx].h_synx, params.arr.list[idx].result);
+			}
+		} else
+			dprintk(SYNX_DBG, "user cb batch deregistration successful\n");
+
+		if (copy_to_user(u64_to_user_ptr(user_data.arr.list),
+			arr_params,
+			sizeof(*arr_params) * user_data.arr.num_objs)) {
+			rc = -EFAULT;
+			dprintk(SYNX_ERR, "Copy to user failed for batch cancel async wait.");
+		}
+		kfree(arr_params);
+		kfree(params.arr.list);
+	} else if (user_data.type == SYNX_CALLBACK_INDV_PARAMS) {
+		params.type = user_data.type;
+		params.indv.h_synx = user_data.indv.synx_obj;
+		params.indv.userdata = (void *)user_data.indv.payload[0];
+		params.indv.cb_func = synx_util_user_callback_v2;
+		rc = synx_cancel_async_wait_n(session, &params);
+		if (rc)
+			dprintk(SYNX_ERR, "user cb indv deregistration failed\n");
+		else
+			dprintk(SYNX_DBG, "user cb indv deregistration successful\n");
+	}
 
 	return rc;
 }
@@ -906,8 +1127,16 @@ long synx_ioctl(struct file *filep,
 		rc = synx_handle_async_wait(&k_ioctl,
 				session);
 		break;
+	case SYNX_REGISTER_PAYLOAD_N:
+		rc = synx_handle_async_wait_n(&k_ioctl,
+				session);
+		break;
 	case SYNX_DEREGISTER_PAYLOAD:
 		rc = synx_handle_cancel_async_wait(&k_ioctl,
+				session);
+		break;
+	case SYNX_DEREGISTER_PAYLOAD_N:
+		rc = synx_handle_cancel_async_wait_n(&k_ioctl,
 				session);
 		break;
 	case SYNX_SIGNAL:
@@ -933,6 +1162,9 @@ long synx_ioctl(struct file *filep,
 		break;
 	case SYNX_GETSTATUS:
 		rc = synx_handle_getstatus(&k_ioctl, session);
+		break;
+	case SYNX_GET:
+		rc = synx_handle_get(&k_ioctl, session);
 		break;
 	case SYNX_IMPORT:
 		rc = synx_handle_import(&k_ioctl, session);
