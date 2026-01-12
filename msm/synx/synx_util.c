@@ -2015,6 +2015,8 @@ u32 synx_util_map_client_id_to_core(
 		core_id = SYNX_CORE_NSP; break;
 	case SYNX_CLIENT_GFX_CTX0:
 		core_id = SYNX_CORE_GMU; break;
+	case SYNX_CLIENT_ADSP_CTX0:
+		core_id = SYNX_CORE_ADSP; break;
 	default:
 		core_id = SYNX_CORE_MAX;
 	}

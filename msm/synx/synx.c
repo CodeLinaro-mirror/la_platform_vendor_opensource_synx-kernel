@@ -3305,13 +3305,18 @@ static int synx_local_mem_init(void)
 	return 0;
 }
 
-static int synx_cdsp_restart_notifier(struct notifier_block *nb,
+static int synx_ssr_restart_notifier(struct notifier_block *nb,
 	unsigned long code, void *data)
 {
-	struct synx_cdsp_ssr *cdsp_ssr = &synx_dev->cdsp_ssr;
+	struct synx_ssr *synx_ssr = container_of(nb, struct synx_ssr, nb);
+	const char *core = NULL;
 
-	if (&cdsp_ssr->nb != nb) {
-		dprintk(SYNX_ERR, "Invalid SSR Notifier block\n");
+	if (synx_ssr->core_id == SYNX_CORE_NSP)
+		core = "CDSP";
+	else if (synx_ssr->core_id == SYNX_CORE_ADSP)
+		core = "ADSP";
+	else {
+		dprintk(SYNX_ERR, "Invalid core id %d for SSR\n", synx_ssr->core_id);
 		return NOTIFY_BAD;
 	}
 
@@ -3319,20 +3324,20 @@ static int synx_cdsp_restart_notifier(struct notifier_block *nb,
 	case QCOM_SSR_BEFORE_SHUTDOWN:
 		break;
 	case QCOM_SSR_AFTER_SHUTDOWN:
-		if (cdsp_ssr->ssrcnt != 0) {
+		if (synx_ssr->ssrcnt != 0) {
 			dprintk(SYNX_INFO, "Cleaning up global memory\n");
-			synx_global_recover(SYNX_CORE_NSP);
+			synx_global_recover(synx_ssr->core_id);
 		}
 		break;
 	case QCOM_SSR_BEFORE_POWERUP:
 		break;
 	case QCOM_SSR_AFTER_POWERUP:
-		dprintk(SYNX_DBG, "CDSP is up");
-		if (cdsp_ssr->ssrcnt == 0)
-			cdsp_ssr->ssrcnt++;
+		dprintk(SYNX_DBG, "%s is up\n", core);
+		if (synx_ssr->ssrcnt == 0)
+			synx_ssr->ssrcnt++;
 		break;
 	default:
-		dprintk(SYNX_ERR, "Unknown status code for CDSP SSR\n");
+		dprintk(SYNX_ERR, "Unknown status code for %s SSR\n", core);
 		break;
 	}
 
@@ -3561,14 +3566,28 @@ static int __init synx_init(void)
 		goto err;
 	}
 
+	synx_dev->cdsp_ssr.core_id = SYNX_CORE_NSP;
 	synx_dev->cdsp_ssr.ssrcnt = 0;
-	synx_dev->cdsp_ssr.nb.notifier_call = synx_cdsp_restart_notifier;
+	synx_dev->cdsp_ssr.nb.notifier_call = synx_ssr_restart_notifier;
 	synx_dev->cdsp_ssr.handle =
 		qcom_register_ssr_notifier("cdsp", &synx_dev->cdsp_ssr.nb);
-	if (synx_dev->cdsp_ssr.handle == NULL) {
-		dprintk(SYNX_ERR, "SSR registration failed\n");
+	if (IS_ERR(synx_dev->cdsp_ssr.handle)) {
+		dprintk(SYNX_ERR, "CDSP SSR registration failed\n");
+		rc = -SYNX_INVALID;
 		goto err;
 	}
+#if IS_ENABLED(CONFIG_TARGET_ENABLE_ADSP)
+	synx_dev->adsp_ssr.core_id = SYNX_CORE_ADSP;
+	synx_dev->adsp_ssr.ssrcnt = 0;
+	synx_dev->adsp_ssr.nb.notifier_call = synx_ssr_restart_notifier;
+	synx_dev->adsp_ssr.handle =
+		qcom_register_ssr_notifier("lpass", &synx_dev->adsp_ssr.nb);
+	if (IS_ERR(synx_dev->adsp_ssr.handle)) {
+		dprintk(SYNX_ERR, "ADSP SSR registration failed\n");
+		rc = -SYNX_INVALID;
+		goto err;
+	}
+#endif
 
 	rc = synx_internal_init_ops(&synx_internal_ops);
 	if (rc) {
@@ -3604,6 +3623,12 @@ static int __init synx_init(void)
 	return 0;
 
 err:
+	if (!IS_ERR(synx_dev->cdsp_ssr.handle))
+		qcom_unregister_ssr_notifier(synx_dev->cdsp_ssr.handle, &synx_dev->cdsp_ssr.nb);
+#if IS_ENABLED(CONFIG_TARGET_ENABLE_ADSP)
+	if (!IS_ERR(synx_dev->adsp_ssr.handle))
+		qcom_unregister_ssr_notifier(synx_dev->adsp_ssr.handle, &synx_dev->adsp_ssr.nb);
+#endif
 	vfree(synx_dev->native);
 fail:
 	device_destroy(synx_dev->class, synx_dev->dev);
