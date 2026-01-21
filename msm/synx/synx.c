@@ -2483,6 +2483,19 @@ retry:
 						map_entry->synx_obj,
 						params->new_h_synx, map_entry);
 
+				#if defined(CONFIG_EXTENSIBLE_GLCOREDATA)
+				if (params_v2 && map_entry->synx_obj &&
+						map_entry->synx_obj->security_key) {
+					/**
+					 * since a client who could access Synx driver is
+					 * trustworthy, return the existing security_key
+					 */
+					params_v2->security_key_lo =
+						map_entry->synx_obj->security_key & 0xFFFFFFFF;
+					params_v2->security_key_hi =
+						map_entry->synx_obj->security_key >> 32;
+				}
+				#endif
 				dprintk(SYNX_DBG, "mapped fence %pK to handle %u\n",
 					params->fence, *params->new_h_synx);
 				goto release;
@@ -2511,6 +2524,19 @@ retry:
 		if (synx_data) {
 			dprintk(SYNX_DBG, "mapped fence %pK to handle %u\n",
 				params->fence, *params->new_h_synx);
+			#if defined(CONFIG_EXTENSIBLE_GLCOREDATA)
+			if (params_v2 && synx_data->synx_obj &&
+					synx_data->synx_obj->security_key) {
+				/**
+				 * since a client who could access Synx driver is
+				 * trustworthy, return the existing security_key
+				 */
+				params_v2->security_key_lo =
+					synx_data->synx_obj->security_key & 0xFFFFFFFF;
+				params_v2->security_key_hi =
+					synx_data->synx_obj->security_key >> 32;
+			}
+			#endif
 			return SYNX_SUCCESS;
 		}
 
@@ -2528,6 +2554,19 @@ retry:
 			goto retry;
 		}
 
+		#if defined(CONFIG_EXTENSIBLE_GLCOREDATA)
+		if (params_v2 && map_entry->synx_obj &&
+				map_entry->synx_obj->security_key) {
+			/**
+			 * since a client who could access Synx driver is
+			 * trustworthy, return the existing security_key
+			 */
+			params_v2->security_key_lo =
+				map_entry->synx_obj->security_key & 0xFFFFFFFF;
+			params_v2->security_key_hi =
+				map_entry->synx_obj->security_key >> 32;
+		}
+		#endif
 		rc = synx_util_init_handle(client, map_entry->synx_obj,
 			params->new_h_synx, map_entry);
 
