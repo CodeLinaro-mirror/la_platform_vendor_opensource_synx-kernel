@@ -335,6 +335,9 @@ static int synx_handle_import_v2(struct synx_private_ioctl_arg *k_ioctl,
 	if (synx_import(session, &params))
 		result = -SYNX_INVALID;
 
+	import_info_v2.security_key_hi = params.indv_v2.security_key_hi;
+	import_info_v2.security_key_lo = params.indv_v2.security_key_lo;
+
 	// Fence needs to be put irresepctive of import status
 	if ((import_info_v2.flags & SYNX_IMPORT_DMA_FENCE) &&
 		(import_info_v2.desc.id[0] != 0))
@@ -497,6 +500,9 @@ static int synx_handle_import_arr_v2(
 		}
 
 		rc = synx_import(session, &params);
+
+		arr_v2[idx].security_key_hi = params.indv_v2.security_key_hi;
+		arr_v2[idx].security_key_lo = params.indv_v2.security_key_lo;
 
 		// Fence needs to be put irresepctive of import status
 		if ((arr_v2[idx].flags & SYNX_IMPORT_DMA_FENCE) &&
