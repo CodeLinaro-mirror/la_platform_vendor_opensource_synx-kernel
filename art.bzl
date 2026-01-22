@@ -13,5 +13,6 @@ def define_art():
         config_options = [
             "TARGET_SYNX_ENABLE",
             "CONFIG_QTI_HW_FENCE",
+            "CONFIG_EXTENSIBLE_GLCOREDATA",
         ],
     )
