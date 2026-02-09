@@ -190,6 +190,27 @@ struct synx_signal_v2 {
 };
 
 /**
+ * struct synx_signal_indv_info - Synx signal indv info
+ *
+ * @h_synx      : Synx object handle
+ * @flags       : Synx signal flags, see enum synx_signal_flags for detail
+ * @status      : Status of signaling, see enum synx_signal_status for supported statuses, provide
+ *                value greater than SYNX_STATE_SIGNALED_MAX for custom notification
+ * @signal_idx  : pointer to tx queue write index (filled by the function
+ *                if SYNX_SIGNAL_DELAY is set in flags); supported for
+ *                SYNX_HW_FENCE and SYNX_FENCE_DIRECT clients only, not by other clients
+ * @client_data : 64-bit client data propagated to waiting clients
+ * @reserved    : Reserved
+ */
+struct synx_signal_indv_info {
+	__u32 h_synx;
+	__u32 flags;
+	__u32 status;
+	__u32 signal_idx;
+	__u64 client_data;
+	__u64 reserved;
+};
+/**
  * struct synx_merge - Merge information for synx objects
  *
  * @synx_objs :  Pointer to synx object array to merge
@@ -463,18 +484,35 @@ struct synx_release_indv_info {
 	__u32 reserved;
 };
 
+
 /**
  * struct synx_op_arr_info - Generic list info for synx objects for batch
  *                           operations.
  *
- * @synx_objs :  list of individual handle info
- * @num_objs  :  Number of objects in the array
+ * @list      : list of individual handle info
+ * @num_objs  : Number of objects in the array
  * @reserved  : Reserved
  */
 struct synx_op_arr_info {
 	__u64 list;
 	__u32 num_objs;
 	__u32 reserved;
+};
+
+/**
+ * struct synx_signal_n_info - Signal information for synx objects
+ * @type         : Signal params type
+ * @reserved     : Reserved
+ * @indv         : params to signal a single synx handle
+ * @arr          : Params to signal an array of handles
+ */
+struct synx_signal_n_info {
+	__u32 type;
+	__u32 reserved;
+	union {
+		struct synx_signal_indv_info indv;
+		struct synx_op_arr_info arr;
+	};
 };
 
 /**
