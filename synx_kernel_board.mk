@@ -11,7 +11,7 @@ endif
 
 #
 ifeq ($(TARGET_SYNX_ENABLE), true)
-ifeq ($(call is-board-platform-in-list,$(TARGET_BOARD_PLATFORM)),true)
+ifneq (,$(call is-board-platform-in-list2,$(TARGET_BOARD_PLATFORM)))
 ifeq ($(TARGET_BOARD_PLATFORM), gen5)
 BOARD_VENDOR_KERNEL_MODULES += $(KERNEL_MODULES_OUT)/synx-stub.ko
 BOARD_VENDOR_RAMDISK_KERNEL_MODULES += $(KERNEL_MODULES_OUT)/synx-stub.ko

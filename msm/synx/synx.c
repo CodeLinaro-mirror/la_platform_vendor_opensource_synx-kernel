@@ -560,26 +560,23 @@ int synx_native_signal_fence(struct synx_coredata *synx_obj,
 
 	spin_lock_irqsave(synx_obj->fence->lock, flags);
 	/* check the status again acquiring lock to avoid errors */
-	if (synx_util_get_object_status_locked(synx_obj) !=
-		SYNX_STATE_ACTIVE) {
-		spin_unlock_irqrestore(synx_obj->fence->lock, flags);
-		return -SYNX_ALREADY;
+	if (synx_util_get_object_status_locked(synx_obj)
+		== SYNX_STATE_ACTIVE) {
+		synx_obj->status = status;
+
+		if (status >= SYNX_DMA_FENCE_STATE_MAX)
+			status = SYNX_DMA_FENCE_STATE_MAX - 1;
+
+		/* set fence error to model {signal w/ error} */
+		if (status != SYNX_STATE_SIGNALED_SUCCESS)
+			dma_fence_set_error(synx_obj->fence, -status);
+
+		rc = dma_fence_signal_locked(synx_obj->fence);
+		if (rc)
+			dprintk(SYNX_ERR,
+				"signaling fence %pK failed=%d\n",
+				synx_obj->fence, rc);
 	}
-
-	synx_obj->status = status;
-
-	if (status >= SYNX_DMA_FENCE_STATE_MAX)
-		status = SYNX_DMA_FENCE_STATE_MAX - 1;
-
-	/* set fence error to model {signal w/ error} */
-	if (status != SYNX_STATE_SIGNALED_SUCCESS)
-		dma_fence_set_error(synx_obj->fence, -status);
-
-	rc = dma_fence_signal_locked(synx_obj->fence);
-	if (rc)
-		dprintk(SYNX_ERR,
-			"signaling fence %pK failed=%d\n",
-			synx_obj->fence, rc);
 	spin_unlock_irqrestore(synx_obj->fence->lock, flags);
 
 	return rc;
@@ -2310,6 +2307,12 @@ int synx_internal_share_handle_status(
 	struct synx_import_indv_params *params,
 	u32 h_hwfence, u32 *signal_status)
 {
+	if (IS_ERR_OR_NULL(params)) {
+		dprintk(SYNX_ERR, "Invalid params received for hw-fence %u\n", h_hwfence);
+		return -SYNX_INVALID;
+	}
+	dprintk(SYNX_DBG,
+		"Registering fence %pK with hw-fence %u\n", params->fence, h_hwfence);
 	return synx_internal_get_handle_status(
 		params, h_hwfence, signal_status, true);
 }
@@ -2477,6 +2480,19 @@ retry:
 						map_entry->synx_obj,
 						params->new_h_synx, map_entry);
 
+				#if defined(CONFIG_EXTENSIBLE_GLCOREDATA)
+				if (params_v2 && map_entry->synx_obj &&
+						map_entry->synx_obj->security_key) {
+					/**
+					 * since a client who could access Synx driver is
+					 * trustworthy, return the existing security_key
+					 */
+					params_v2->security_key_lo =
+						map_entry->synx_obj->security_key & 0xFFFFFFFF;
+					params_v2->security_key_hi =
+						map_entry->synx_obj->security_key >> 32;
+				}
+				#endif
 				dprintk(SYNX_DBG, "mapped fence %pK to handle %u\n",
 					params->fence, *params->new_h_synx);
 				goto release;
@@ -2505,6 +2521,19 @@ retry:
 		if (synx_data) {
 			dprintk(SYNX_DBG, "mapped fence %pK to handle %u\n",
 				params->fence, *params->new_h_synx);
+			#if defined(CONFIG_EXTENSIBLE_GLCOREDATA)
+			if (params_v2 && synx_data->synx_obj &&
+					synx_data->synx_obj->security_key) {
+				/**
+				 * since a client who could access Synx driver is
+				 * trustworthy, return the existing security_key
+				 */
+				params_v2->security_key_lo =
+					synx_data->synx_obj->security_key & 0xFFFFFFFF;
+				params_v2->security_key_hi =
+					synx_data->synx_obj->security_key >> 32;
+			}
+			#endif
 			return SYNX_SUCCESS;
 		}
 
@@ -2522,6 +2551,19 @@ retry:
 			goto retry;
 		}
 
+		#if defined(CONFIG_EXTENSIBLE_GLCOREDATA)
+		if (params_v2 && map_entry->synx_obj &&
+				map_entry->synx_obj->security_key) {
+			/**
+			 * since a client who could access Synx driver is
+			 * trustworthy, return the existing security_key
+			 */
+			params_v2->security_key_lo =
+				map_entry->synx_obj->security_key & 0xFFFFFFFF;
+			params_v2->security_key_hi =
+				map_entry->synx_obj->security_key >> 32;
+		}
+		#endif
 		rc = synx_util_init_handle(client, map_entry->synx_obj,
 			params->new_h_synx, map_entry);
 
@@ -3015,11 +3057,12 @@ void *synx_internal_get_dma_fence(u32 h_synx)
 		if (curr->g_handle == h_synx) {
 			fence = (void *)curr->key;
 			dma_fence_get((struct dma_fence *)curr->key);
-			break;
+			dprintk(SYNX_DBG,
+				"Retrieved fence %pK for synx handle %u\n", fence, h_synx);
+				break;
+			}
 		}
-	}
 	spin_unlock_bh(&synx_dev->native->fence_map_lock);
-
 	return fence;
 }
 
