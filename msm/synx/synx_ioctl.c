@@ -999,6 +999,32 @@ static int synx_handle_cancel_async_wait_n(
 	return rc;
 }
 
+static int synx_handle_poll_read(struct synx_private_ioctl_arg *k_ioctl,
+	struct synx_session *session)
+{
+	struct synx_userpayload_indv_info info = {0};
+
+	if (k_ioctl->size != sizeof(struct synx_userpayload_indv_info) &&
+		k_ioctl->size != sizeof(struct synx_userpayload_info_v2)) {
+		dprintk(SYNX_ERR, "invalid read size\n");
+		return -SYNX_INVALID;
+	}
+
+	k_ioctl->result = synx_internal_poll_read(session, &info);
+
+	if (k_ioctl->result == SYNX_EVENT_READ) {
+		if (copy_to_user(u64_to_user_ptr(k_ioctl->ioctl_ptr),
+				&info,
+				k_ioctl->size)) {
+			dprintk(SYNX_ERR, "couldn't copy user callback data\n");
+			return -EFAULT;
+		}
+	} else if (k_ioctl->result == SYNX_EVENT_CLOSE)
+		dprintk(SYNX_DBG, "Session close event received\n");
+
+	return k_ioctl->result;
+}
+
 static int synx_handle_bind(struct synx_private_ioctl_arg *k_ioctl,
 	struct synx_session *session)
 {
@@ -1352,6 +1378,15 @@ long synx_ioctl(struct file *filep,
 		break;
 	case SYNX_GET_SYS_INFO:
 		rc = synx_handle_get_sys_info(&k_ioctl);
+		break;
+	case SYNX_POLL_READ:
+		rc = synx_handle_poll_read(&k_ioctl, session);
+		if (copy_to_user((void *)arg,
+			&k_ioctl,
+			sizeof(k_ioctl))) {
+			dprintk(SYNX_ERR, "invalid ioctl args\n");
+			rc = -EFAULT;
+		}
 		break;
 #if IS_ENABLED(CONFIG_DEBUG_FS)
 	case SYNX_RECOVER:
