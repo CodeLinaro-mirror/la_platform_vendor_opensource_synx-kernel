@@ -70,6 +70,8 @@ struct synx_session *synx_internal_initialize(struct synx_initialization_params 
 
 int synx_internal_recover(enum synx_client_id id);
 
+int synx_internal_get_capability(u32 *caps, u32 num_dwords, bool is_interop);
+
 void synx_util_default_user_callback(u32 h_synx,
 	int status, void *data);
 
@@ -106,6 +108,11 @@ static inline struct synx_session *synx_internal_initialize(
 }
 
 static inline int synx_internal_recover(enum synx_client_id id)
+{
+	return -SYNX_INVALID;
+}
+
+static inline int synx_internal_get_capability(u32 *caps, u32 num_dwords, bool is_interop)
 {
 	return -SYNX_INVALID;
 }

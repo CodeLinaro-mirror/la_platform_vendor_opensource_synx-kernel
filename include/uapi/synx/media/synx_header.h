@@ -582,6 +582,27 @@ struct synx_recover_info {
 	__u32 reserved;
 };
 
+/**
+ * struct synx_get_sys_info - System info get parameters
+ *
+ * @client_type : Client type (SYNX_CLIENT, HW_FENCE_CLIENT, or SYNX_INTEROP_CLIENT)
+ * @type        : Query type (e.g., SYNX_GET_CAPABILITY)
+ * @num_dwords  : Number of u32 dwords in the pre-allocated caps array
+ * @caps        : User pointer to array for capability bitmask
+ * @reserved    : Reserved for future use
+ */
+struct synx_get_sys_info {
+	__u32 client_type;
+	__u32 type;
+	union {
+		__u64 num_dwords;
+	};
+	union {
+		__u64 caps;
+	};
+	__u64 reserved;
+};
+
 #define SYNX_PRIVATE_MAGIC_NUM 's'
 
 #define SYNX_PRIVATE_IOCTL_CMD \
@@ -613,4 +634,5 @@ struct synx_recover_info {
 #define SYNX_DEREGISTER_PAYLOAD_N            23
 #define SYNX_GET                             24
 #define SYNX_POLL_READ                       25
+#define SYNX_GET_SYS_INFO                    26
 #endif /* __UAPI_SYNX_H__ */

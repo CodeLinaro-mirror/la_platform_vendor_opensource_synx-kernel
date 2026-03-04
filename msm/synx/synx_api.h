@@ -44,6 +44,92 @@
  */
 #define SYNX_NO_CLIENT_DATA 0
 
+/**
+ * SYNX_CAPABILITY_DWORDS :   Number of u32 dwords to be allocated for capability bitmask array.
+ *                            This value may increase in future releases as new capabilities
+ *                            are added beyond a 32-bit boundary. Clients should use this macro
+ *                            to allocate the caps array and set the num_dwords field in
+ *                            struct synx_get_sys_info_params.
+ */
+#define SYNX_CAPABILITY_DWORDS 2
+
+/**
+ * enum synx_capability_flags - Capability bit definitions
+ *
+ * Each enumerator identifies a single capability bit within the bitmask array
+ * returned by synx_get_sys_info(). Use SYNX_CAP_IS_SET() to test a bit.
+ *
+ * SYNX_CAP_SIGNAL_N     : Signal-N capability
+ * SYNX_CAP_ASYNC_WAIT_N : Async-wait-N capability
+ * SYNX_CAP_REUSE        : Reuse capability
+ * SYNX_CAP_IMPORT_V2    : Import-V2 capability
+ * SYNX_CAP_MERGE_N      : Merge-N capability
+ * SYNX_CAP_MAX          : Max Capability (used for internal checks)
+ */
+enum synx_capability_flags {
+	SYNX_CAP_SIGNAL_N     = 0,
+	SYNX_CAP_ASYNC_WAIT_N = 1,
+	SYNX_CAP_REUSE        = 2,
+	SYNX_CAP_IMPORT_V2    = 3,
+	SYNX_CAP_MERGE_N      = 4,
+	SYNX_CAP_MAX          = 5,
+};
+
+/**
+ * SYNX_CAP_IS_SET - Check if a capability is set in the caps array
+ *
+ * Returns 0 if cap >= SYNX_CAP_MAX, caps is NULL, num_dwords is 0,
+ * or the dword index for cap falls beyond num_dwords.
+ *
+ * @caps       : Pointer to u32 caps array
+ * @num_dwords : Number of u32 dwords in the caps array
+ * @cap        : Capability to check (enum synx_capability_flags value)
+ */
+#define SYNX_CAP_IS_SET(caps, num_dwords, cap) \
+	(((cap) < SYNX_CAP_MAX) && (caps) && ((num_dwords) > 0) && \
+	(((cap) / 32) < (num_dwords)) && \
+	((caps)[(cap) / 32] & (1U << ((cap) % 32))))
+
+/**
+ * enum synx_client_type - Client implementation type for synx_get_sys_info routing
+ *
+ * SYNX_CLIENT          : synx to synx support
+ * HW_FENCE_CLIENT      : hw-fence to hw-fence support
+ * SYNX_INTEROP_CLIENT  : synx to hw-fence or hw-fence to synx
+ */
+enum synx_client_type {
+	SYNX_CLIENT         = 0,
+	HW_FENCE_CLIENT     = 1,
+	SYNX_INTEROP_CLIENT = 2,
+};
+
+/**
+ * enum synx_get_sys_info_type - System info get params type
+ *
+ * SYNX_GET_CAPABILITY : Query synx capabilities
+ */
+enum synx_get_sys_info_type {
+	SYNX_GET_CAPABILITY = 0x01,
+};
+
+/**
+ * struct synx_get_sys_info_params - Parameters for synx_get_sys_info
+ *
+ * @type       : Query type filled by client (enum synx_get_sys_info_type)
+ * @num_dwords : Number of u32 dwords in the pre-allocated caps array (filled by client).
+ *               Set to SYNX_CAPABILITY_DWORDS.
+ * @caps       : Output u32 array to be filled with capability bitmask (filled by function)
+ */
+struct synx_get_sys_info_params {
+	enum synx_get_sys_info_type type;
+	union {
+		u64 num_dwords;
+	};
+	union {
+		u32 *caps;
+	};
+};
+
 /* synx object states */
 #define SYNX_STATE_INVALID             0    // Invalid synx object
 #define SYNX_STATE_ACTIVE              1    // Synx object has not been signaled
@@ -1384,5 +1470,15 @@ int synx_enable_resources(enum synx_client_id id, enum synx_resource_type resour
  * @return Status of operation. Negative in case of error, SYNX_SUCCESS otherwise.
  */
 int synx_get(struct synx_session *session, struct synx_get_params *params);
+
+/**
+ * synx_get_sys_info - Get system information
+ *
+ * @param type   : Client type; determines routing to synx-core or hw-fence
+ * @param params : Pointer to synx_get_sys_info_params
+ *
+ * @return Status of operation. Negative in case of error. SYNX_SUCCESS otherwise.
+ */
+int synx_get_sys_info(enum synx_client_type type, struct synx_get_sys_info_params *params);
 
 #endif /* __SYNX_API_H__ */
