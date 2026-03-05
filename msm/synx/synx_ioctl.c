@@ -195,7 +195,7 @@ static int synx_handle_get(struct synx_private_ioctl_arg *k_ioctl,
 		params.type == SYNX_GET_STATUS_PARAMS ||
 		params.type == SYNX_GET_CLIENT_DATA) {
 		params.h_synx = get_info.synx_obj;
-	} else {
+	} else if (params.type != SYNX_GET_MAX_GLOBAL_FENCES) {
 		return -SYNX_INVALID;
 	}
 
