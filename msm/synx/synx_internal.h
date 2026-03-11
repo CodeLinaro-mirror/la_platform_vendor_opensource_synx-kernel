@@ -137,5 +137,6 @@ static inline unsigned int synx_poll(struct file *filep,
 
 int synx_open(struct inode *inode, struct file *filep);
 int synx_close(struct inode *inode, struct file *filep);
-
+void synx_dma_fence_callback(struct dma_fence *fence, struct dma_fence_cb *cb);
+void synx_test_fence_release(struct dma_fence *fence);
 #endif /* __SYNX_INTERNAL_H__ */

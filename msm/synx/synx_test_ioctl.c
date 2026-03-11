@@ -10,6 +10,7 @@
 #include <linux/uaccess.h>
 #include <linux/vmalloc.h>
 
+#include "synx_internal.h"
 #include "synx_compat_debug.h"
 #include "synx_err.h"
 
@@ -260,12 +261,12 @@ struct synx_dma_signal_params {
 
 static atomic64_t test_dma_seq_counter = ATOMIC64_INIT(1);
 
-bool synx_test_fence_enable_signaling(struct dma_fence *fence)
+static bool synx_test_fence_enable_signaling(struct dma_fence *fence)
 {
 	return true;
 }
 
-const char *synx_test_fence_driver_name(struct dma_fence *fence)
+static const char *synx_test_fence_driver_name(struct dma_fence *fence)
 {
 	return "Global Synx Test Ioctl node";
 }
