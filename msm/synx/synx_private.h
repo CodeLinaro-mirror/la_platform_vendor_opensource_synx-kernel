@@ -49,6 +49,11 @@
 
 #define IS_HW_FENCE(hw_fence) (hw_fence & SYNX_HW_FENCE_HANDLE_FLAG)
 
+enum PLATFORM_SOC_ID {
+	QCOM_ID_RAVELINP = 0x0000025A,
+	QCOM_ID_RAVELIN = 0x00000238,
+};
+
 enum synx_queue_mem_type {
 	SYNX_MEM_DEFAULT = 0x00,
 	SYNX_MEM_MAX,
