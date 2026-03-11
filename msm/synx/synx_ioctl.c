@@ -609,7 +609,7 @@ static int synx_handle_merge(struct synx_private_ioctl_arg *k_ioctl,
 static int synx_handle_merge_n(struct synx_private_ioctl_arg *k_ioctl,
 	struct synx_session *session)
 {
-	u32 *h_synxs;
+	u32 *h_synxs = NULL;
 	int result = 0;
 	struct synx_merge_n_info merge_n_info;
 	struct synx_merge_n_params params = {0};
