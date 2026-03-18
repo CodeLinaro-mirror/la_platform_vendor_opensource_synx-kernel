@@ -270,7 +270,10 @@ static int synx_native_create_core(struct synx_client *client,
 	if (*params->h_synx != 0)
 		map_entry_can_exist = true;
 
-	synx_obj = kzalloc(sizeof(*synx_obj), GFP_ATOMIC);
+	if (client->session.type != SYNX_CLIENT_GFX_CTX0)
+		synx_obj = kzalloc(sizeof(*synx_obj), GFP_KERNEL);
+	else
+		synx_obj = kzalloc(sizeof(*synx_obj), GFP_ATOMIC);
 	if (IS_ERR_OR_NULL(synx_obj)) {
 		dprintk(SYNX_ERR, "synx_obj allocation failed\n");
 		return -SYNX_NOMEM;
@@ -288,14 +291,16 @@ static int synx_native_create_core(struct synx_client *client,
 
 	map_entry = synx_util_insert_to_map(synx_obj,
 					*params->h_synx, 0,
-					map_entry_can_exist);
+					map_entry_can_exist,
+					(client->session.type != SYNX_CLIENT_GFX_CTX0));
 	if (IS_ERR_OR_NULL(map_entry)) {
 		rc = PTR_ERR(map_entry);
 		synx_util_put_object(synx_obj);
 		goto fail;
 	}
 
-	rc = synx_util_add_callback(map_entry->synx_obj, *params->h_synx);
+	rc = synx_util_add_callback(map_entry->synx_obj, *params->h_synx,
+					(client->session.type != SYNX_CLIENT_GFX_CTX0));
 	if (rc != SYNX_SUCCESS) {
 		synx_util_release_map_entry(map_entry);
 		goto fail;
@@ -560,26 +565,23 @@ int synx_native_signal_fence(struct synx_coredata *synx_obj,
 
 	spin_lock_irqsave(synx_obj->fence->lock, flags);
 	/* check the status again acquiring lock to avoid errors */
-	if (synx_util_get_object_status_locked(synx_obj) !=
-		SYNX_STATE_ACTIVE) {
-		spin_unlock_irqrestore(synx_obj->fence->lock, flags);
-		return -SYNX_ALREADY;
+	if (synx_util_get_object_status_locked(synx_obj)
+		== SYNX_STATE_ACTIVE) {
+		synx_obj->status = status;
+
+		if (status >= SYNX_DMA_FENCE_STATE_MAX)
+			status = SYNX_DMA_FENCE_STATE_MAX - 1;
+
+		/* set fence error to model {signal w/ error} */
+		if (status != SYNX_STATE_SIGNALED_SUCCESS)
+			dma_fence_set_error(synx_obj->fence, -status);
+
+		rc = dma_fence_signal_locked(synx_obj->fence);
+		if (rc)
+			dprintk(SYNX_ERR,
+				"signaling fence %pK failed=%d\n",
+				synx_obj->fence, rc);
 	}
-
-	synx_obj->status = status;
-
-	if (status >= SYNX_DMA_FENCE_STATE_MAX)
-		status = SYNX_DMA_FENCE_STATE_MAX - 1;
-
-	/* set fence error to model {signal w/ error} */
-	if (status != SYNX_STATE_SIGNALED_SUCCESS)
-		dma_fence_set_error(synx_obj->fence, -status);
-
-	rc = dma_fence_signal_locked(synx_obj->fence);
-	if (rc)
-		dprintk(SYNX_ERR,
-			"signaling fence %pK failed=%d\n",
-			synx_obj->fence, rc);
 	spin_unlock_irqrestore(synx_obj->fence->lock, flags);
 
 	return rc;
@@ -1105,7 +1107,7 @@ int synx_internal_async_wait(struct synx_session *session,
 	}
 
 	mutex_lock(&synx_obj->obj_lock);
-	synx_cb = kzalloc(sizeof(*synx_cb), GFP_ATOMIC);
+	synx_cb = kzalloc(sizeof(*synx_cb), GFP_KERNEL);
 	if (IS_ERR_OR_NULL(synx_cb)) {
 		rc = -SYNX_NOMEM;
 		goto release;
@@ -1397,7 +1399,7 @@ int synx_internal_merge(struct synx_session *session,
 
 	map_entry = synx_util_insert_to_map(synx_obj,
 					*params->h_merged_obj, 0,
-					false);
+					false, (session->type != SYNX_CLIENT_GFX_CTX0));
 	if (IS_ERR_OR_NULL(map_entry)) {
 		rc = PTR_ERR(map_entry);
 		synx_util_put_object(synx_obj);
@@ -1405,7 +1407,8 @@ int synx_internal_merge(struct synx_session *session,
 		goto fail;
 	}
 
-	rc = synx_util_add_callback(synx_obj, *params->h_merged_obj);
+	rc = synx_util_add_callback(synx_obj, *params->h_merged_obj,
+					(session->type != SYNX_CLIENT_GFX_CTX0));
 
 	if (rc != SYNX_SUCCESS)
 		goto clean_up;
@@ -1610,7 +1613,7 @@ int synx_internal_merge_n(struct synx_session *session,
 
 	map_entry = synx_util_insert_to_map(synx_obj,
 					*params_indv->h_merged_obj, 0,
-					false);
+					false, (session->type != SYNX_CLIENT_GFX_CTX0));
 	if (IS_ERR_OR_NULL(map_entry)) {
 		rc = PTR_ERR(map_entry);
 		synx_util_put_object(synx_obj);
@@ -1618,7 +1621,8 @@ int synx_internal_merge_n(struct synx_session *session,
 		goto fail;
 	}
 
-	rc = synx_util_add_callback(synx_obj, *params_indv->h_merged_obj);
+	rc = synx_util_add_callback(synx_obj, *params_indv->h_merged_obj,
+					(session->type != SYNX_CLIENT_GFX_CTX0));
 
 	if (rc != SYNX_SUCCESS)
 		goto clean_up;
@@ -2089,8 +2093,8 @@ static struct synx_map_entry *synx_handle_conversion(
 		if (IS_ERR_OR_NULL(map_entry)) {
 			/* raced with release from last global client */
 			map_entry = synx_util_insert_to_map(synx_obj,
-						*h_synx, 0,
-						false);
+						*h_synx, 0, false,
+						(client->session.type != SYNX_CLIENT_GFX_CTX0));
 			if (IS_ERR_OR_NULL(map_entry)) {
 				rc = PTR_ERR(map_entry);
 				dprintk(SYNX_ERR,
@@ -2108,8 +2112,8 @@ static struct synx_map_entry *synx_handle_conversion(
 			synx_obj->type |= SYNX_CREATE_GLOBAL_FENCE;
 
 			map_entry = synx_util_insert_to_map(synx_obj,
-						*h_synx, 0,
-						false);
+						*h_synx, 0, false,
+						(client->session.type != SYNX_CLIENT_GFX_CTX0));
 			if (IS_ERR_OR_NULL(map_entry)) {
 				rc = PTR_ERR(map_entry);
 				synx_global_put_ref(
@@ -2442,7 +2446,10 @@ retry:
 
 		curr_h_synx = *params->new_h_synx;
 
-		entry = kzalloc(sizeof(*entry), GFP_ATOMIC);
+		if (client->session.type != SYNX_CLIENT_GFX_CTX0)
+			entry = kzalloc(sizeof(*entry), GFP_KERNEL);
+		else
+			entry = kzalloc(sizeof(*entry), GFP_ATOMIC);
 		if (IS_ERR_OR_NULL(entry)) {
 			rc = -SYNX_NOMEM;
 			curr_h_synx = *c_params.h_synx;
@@ -2866,6 +2873,7 @@ struct synx_session *synx_internal_initialize(
 	if (params->name)
 		strscpy(client->name, params->name, sizeof(client->name));
 
+	client->session.type = params->id;
 	client->active = true;
 	client->dma_context = dma_fence_context_alloc(1);
 	client->id = atomic64_inc_return(&synx_counter);
