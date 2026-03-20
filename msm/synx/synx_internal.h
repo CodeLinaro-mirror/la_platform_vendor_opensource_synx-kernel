@@ -79,9 +79,15 @@ int synx_bind(struct synx_session *session,
 	u32 h_synx,
 	struct synx_external_desc_v2 external_sync);
 
+int synx_internal_poll_read(struct synx_session *session,
+	struct synx_userpayload_indv_info *info);
+
 // Function pointers for file operations
 ssize_t synx_read(struct file *filep,
 	char __user *buf, size_t size, loff_t *f_pos);
+
+ssize_t synx_write(struct file *filep,
+	const char __user *buf, size_t size, loff_t *f_pos);
 
 unsigned int synx_poll(struct file *filep,
 	struct poll_table_struct *poll_table);
@@ -127,9 +133,23 @@ static inline ssize_t synx_read(struct file *filep,
 	return -SYNX_INVALID;
 }
 
+// Stub wrapper for write operation
+static inline ssize_t synx_write(struct file *filep,
+	const char __user *buf, size_t size, loff_t *f_pos)
+{
+	return -SYNX_INVALID;
+}
+
 // Stub wrapper for poll operation
 static inline unsigned int synx_poll(struct file *filep,
 	struct poll_table_struct *poll_table)
+{
+	return -SYNX_INVALID;
+}
+
+// Stub wrapper for poll_read operation
+static inline int synx_internal_poll_read(struct synx_session *session,
+	struct synx_userpayload_indv_info *info)
 {
 	return -SYNX_INVALID;
 }
