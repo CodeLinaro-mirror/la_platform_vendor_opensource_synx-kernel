@@ -40,6 +40,17 @@ KBUILD_CPPFLAGS += -DCONFIG_SYNX_SUN=1
 ccflags-y += -DCONFIG_SYNX_SUN=1
 endif
 
+ifeq ($(CONFIG_ARCH_SERAPH), y)
+$(info within KBUILD file CONFIG_ARCH_SERAPH = $(CONFIG_ARCH_SERAPH))
+# include $(SYNX_ROOT)/config/seraph.mk
+KBUILD_CPPFLAGS += -DCONFIG_SYNX_SERAPH=1
+ccflags-y += -DCONFIG_SYNX_SERAPH=1
+KBUILD_CPPFLAGS += -DCONFIG_SYNX_IMPL=1
+ccflags-y += -DCONFIG_SYNX_IMPL=1
+CONFIG_QTI_HW_FENCE := y
+KBUILD_CPPFLAGS += -DCONFIG_QTI_HW_FENCE=1
+endif
+
 obj-m += synx-driver.o
 
 # synx-kernel module only includes interface layer files
