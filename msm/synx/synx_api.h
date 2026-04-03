@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2019, 2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022, 2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef __SYNX_API_H__
@@ -401,6 +401,18 @@ int synx_release(struct synx_session session_id, s32 h_synx);
 #include "synx_err.h"
 
 #define SYNX_NO_TIMEOUT        ((u64)-1)
+
+#define SYNX_MAJOR_VERSION 2
+#define SYNX_MINOR_VERSION 0
+#define SYNX_PATCH_VERSION 0
+
+#define SYNX_VERSION(major, minor, patch)	\
+	(((((u32)(major)) & 0xFU) << 28) |		\
+	 ((((u32)(minor)) & 0xFFFU) << 16) |	\
+	 (((u32)(patch)) & 0xFFFFU))
+
+#define SYNX_API_VERSION \
+	SYNX_VERSION(SYNX_MAJOR_VERSION, SYNX_MINOR_VERSION, SYNX_PATCH_VERSION)
 
 /**
  * enum synx_create_flags - Flags passed during synx_create call
