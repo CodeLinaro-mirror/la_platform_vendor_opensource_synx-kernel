@@ -2581,6 +2581,8 @@ retry:
 
 		dprintk(SYNX_DBG, "mapped fence %pK to existing handle %u\n",
 			params->fence, *params->new_h_synx);
+
+		return rc;
 	}
 
 	if (test_bit(SYNX_HW_FENCE_FLAG_ENABLED_BIT,
