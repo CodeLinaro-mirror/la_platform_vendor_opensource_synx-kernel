@@ -10,6 +10,7 @@ def define_sun():
         ],
         config_options = [
             "TARGET_SYNX_ENABLE",
-	    "CONFIG_QTI_HW_FENCE",
+            "CONFIG_QTI_HW_FENCE",
+            "CONFIG_SYNX_IMPL",
         ],
     )
