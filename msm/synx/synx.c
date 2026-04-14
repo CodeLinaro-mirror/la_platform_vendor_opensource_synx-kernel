@@ -3377,9 +3377,18 @@ static int synx_dt_get_array(void)
 		goto out;
 	}
 
-	if (elems > 2 && arr[0] == QCOM_ID_RAVELINP && arr[2] == QCOM_ID_RAVELIN) {
-		synx_nosupport_flag = true;
-		ret = -EOPNOTSUPP;
+	for (int i = 0; i < elems; i++) {
+		switch (arr[i]) {
+		case QCOM_ID_RAVELINP:
+		case QCOM_ID_RAVELIN:
+		case QCOM_ID_BOURTZI:
+		case QCOM_ID_BOURTZIP:
+			synx_nosupport_flag = true;
+			ret = -EOPNOTSUPP;
+			goto out;
+		default:
+			break;
+		}
 	}
 
 out:
