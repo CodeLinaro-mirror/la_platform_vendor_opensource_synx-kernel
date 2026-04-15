@@ -38,6 +38,10 @@ load(":canoe.bzl", "define_canoe")
 
 define_canoe()
 
+load(":pebble-le.bzl", "define_pebble_le")
+
+define_pebble_le()
+
 load(":seraph.bzl", "define_seraph")
 
 define_seraph()

@@ -1,0 +1,16 @@
+load(":synx_modules.bzl", "synx_modules")
+load(":synx_module_build.bzl", "define_consolidate_perf_modules")
+
+def define_pebble_le():
+    define_consolidate_perf_modules(
+        target = "pebble-le",
+        registry = synx_modules,
+        modules = [
+            "synx-driver",
+        ],
+        config_options = [
+            "TARGET_SYNX_ENABLE",
+            # "CONFIG_QTI_HW_FENCE",
+            "CONFIG_SYNX_IMPL",
+        ],
+    )
