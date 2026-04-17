@@ -387,6 +387,7 @@ static int synx_handle_import_arr(
 		params.type = SYNX_IMPORT_INDV_PARAMS;
 		params.indv.new_h_synx = &arr[idx].new_synx_obj;
 		params.indv.flags = arr[idx].flags;
+		params.indv.fence = NULL;
 
 		if (arr[idx].flags & SYNX_IMPORT_DMA_FENCE) {
 			if (arr[idx].desc.id[0] == 0) {
@@ -477,6 +478,7 @@ static int synx_handle_import_arr_v2(
 		params.indv_v2.security_key_lo = arr_v2[idx].security_key_lo;
 		params.indv_v2.client_data_hi = arr_v2[idx].client_data_hi;
 		params.indv_v2.client_data_lo = arr_v2[idx].client_data_lo;
+		params.indv_v2.fence = NULL;
 
 		if (arr_v2[idx].flags & SYNX_IMPORT_DMA_FENCE) {
 			if (arr_v2[idx].desc.id[0] == 0) {
