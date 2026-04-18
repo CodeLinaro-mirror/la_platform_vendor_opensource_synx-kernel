@@ -18,6 +18,10 @@
 #define SYNX_CALLBACK_RESULT_FAILED          3
 #define SYNX_CALLBACK_RESULT_CANCELED        4
 
+/* synx event states */
+#define SYNX_EVENT_READ                      1
+#define SYNX_EVENT_CLOSE                     2
+
 /**
  * struct synx_info - Sync object creation information
  *
@@ -608,4 +612,5 @@ struct synx_recover_info {
 #define SYNX_REGISTER_PAYLOAD_N              22
 #define SYNX_DEREGISTER_PAYLOAD_N            23
 #define SYNX_GET                             24
+#define SYNX_POLL_READ                       25
 #endif /* __UAPI_SYNX_H__ */
