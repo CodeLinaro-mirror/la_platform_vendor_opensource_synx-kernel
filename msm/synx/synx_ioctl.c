@@ -610,7 +610,7 @@ static int synx_handle_signal_n(struct synx_private_ioctl_arg *k_ioctl,
 			dprintk(SYNX_ERR, "synx_signal_n batch failed %d\n", rc);
 
 		for (idx = 0; idx < params.arr.num_fences; idx++) {
-			dprintk(SYNX_DBG, "Handle: %u signaled\n",
+			dprintk(SYNX_DBG, "h_synx: 0x%x signaled\n",
 				params.arr.list[idx].h_synx);
 		}
 
@@ -800,7 +800,7 @@ static int synx_handle_async_wait(
 	rc = synx_async_wait(session, &params);
 	if (rc)
 		dprintk(SYNX_ERR,
-			"user cb registration failed for handle %d\n",
+			"user cb registration failed for h_synx 0x%x\n",
 			user_data.synx_obj);
 
 	return rc;
@@ -857,7 +857,7 @@ static int synx_handle_async_wait_n(
 			dprintk(SYNX_ERR, "user cb batch registration failed\n");
 			for (idx = 0; idx < params.arr.num_fences; idx++) {
 				arr_params[idx].result = params.arr.list[idx].result;
-				dprintk(SYNX_ERR, "Handle: %u async wait result: %d\n",
+				dprintk(SYNX_ERR, "h_synx: 0x%x async wait result: %d\n",
 					params.arr.list[idx].h_synx, params.arr.list[idx].result);
 			}
 		} else
@@ -912,7 +912,7 @@ static int synx_handle_cancel_async_wait(
 	rc = synx_cancel_async_wait(session, &params);
 	if (rc)
 		dprintk(SYNX_ERR,
-			"user cb deregistration failed for handle %d\n",
+			"user cb deregistration failed for h_synx 0x%x\n",
 			user_data.synx_obj);
 
 	return rc;
@@ -968,7 +968,7 @@ static int synx_handle_cancel_async_wait_n(
 			dprintk(SYNX_ERR, "user cb batch deregistration failed\n");
 			for (idx = 0; idx < params.arr.num_fences; idx++) {
 				arr_params[idx].result = params.arr.list[idx].result;
-				dprintk(SYNX_ERR, "Handle: %u cancel async wait result: %d\n",
+				dprintk(SYNX_ERR, "h_synx: 0x%x cancel async wait result: %d\n",
 					params.arr.list[idx].h_synx, params.arr.list[idx].result);
 			}
 		} else
@@ -1087,7 +1087,7 @@ static int synx_handle_release_n(struct synx_private_ioctl_arg *k_ioctl,
 
 		for (idx = 0; idx < params.arr.num_objs; idx++) {
 			arr[idx].status = params.arr.list[idx].result;
-			dprintk(SYNX_DBG, "Handle: %u Release status: %d\n",
+			dprintk(SYNX_DBG, "h_synx: 0x%x Release status: %d\n",
 				params.arr.list[idx].h_synx, params.arr.list[idx].result);
 		}
 
@@ -1108,11 +1108,11 @@ static int synx_handle_release_n(struct synx_private_ioctl_arg *k_ioctl,
 		result = synx_release_n(session, &params);
 		if (result != SYNX_SUCCESS) {
 			dprintk(SYNX_ERR,
-				"synx_release_n failed %d for indv handle %u",
+				"synx_release_n failed %d for indv h_synx 0x%x",
 				result, params.indv.h_synx);
 		} else {
 			dprintk(SYNX_VERB,
-				"synx_release_n success for indv handle %u",
+				"synx_release_n success for indv h_synx 0x%x",
 				params.indv.h_synx);
 		}
 	} else {
