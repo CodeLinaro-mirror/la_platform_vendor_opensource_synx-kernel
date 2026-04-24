@@ -10,6 +10,27 @@
 #include <linux/dma-fence.h>
 
 /**
+ * SYNX_CAP_WORD  - Get the u32 array index for a capability bit
+ * SYNX_CAP_BIT   - Get the bit position within the u32 word for a capability
+ * SYNX_CAP_SET   - Set a capability bit in the caps array
+ *                  No-op if cap >= SYNX_CAP_MAX or dword index >= num_dwords
+ * SYNX_CAP_CLEAR - Clear a capability bit in the caps array
+ *                  No-op if cap >= SYNX_CAP_MAX or dword index >= num_dwords
+ */
+#define SYNX_CAP_WORD(cap)        ((cap) / 32)
+#define SYNX_CAP_BIT(cap)         ((cap) % 32)
+#define SYNX_CAP_SET(caps, num_dwords, cap) \
+	do { \
+		if ((cap) < SYNX_CAP_MAX && SYNX_CAP_WORD(cap) < (num_dwords)) \
+			((caps)[SYNX_CAP_WORD(cap)] |= (1U << SYNX_CAP_BIT(cap))); \
+	} while (0)
+#define SYNX_CAP_CLEAR(caps, num_dwords, cap) \
+	do { \
+		if ((cap) < SYNX_CAP_MAX && SYNX_CAP_WORD(cap) < (num_dwords)) \
+			((caps)[SYNX_CAP_WORD(cap)] &= ~(1U << SYNX_CAP_BIT(cap))); \
+	} while (0)
+
+/**
  * enum synx_core_id - Synx core IDs
  *
  * SYNX_CORE_APSS     : APSS core

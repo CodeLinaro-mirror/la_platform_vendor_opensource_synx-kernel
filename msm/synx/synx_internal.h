@@ -70,6 +70,8 @@ struct synx_session *synx_internal_initialize(struct synx_initialization_params 
 
 int synx_internal_recover(enum synx_client_id id);
 
+int synx_internal_get_capability(u32 *caps, u32 num_dwords, bool is_interop);
+
 void synx_util_default_user_callback(u32 h_synx,
 	int status, void *data);
 
@@ -79,9 +81,15 @@ int synx_bind(struct synx_session *session,
 	u32 h_synx,
 	struct synx_external_desc_v2 external_sync);
 
+int synx_internal_poll_read(struct synx_session *session,
+	struct synx_userpayload_indv_info *info);
+
 // Function pointers for file operations
 ssize_t synx_read(struct file *filep,
 	char __user *buf, size_t size, loff_t *f_pos);
+
+ssize_t synx_write(struct file *filep,
+	const char __user *buf, size_t size, loff_t *f_pos);
 
 unsigned int synx_poll(struct file *filep,
 	struct poll_table_struct *poll_table);
@@ -100,6 +108,11 @@ static inline struct synx_session *synx_internal_initialize(
 }
 
 static inline int synx_internal_recover(enum synx_client_id id)
+{
+	return -SYNX_INVALID;
+}
+
+static inline int synx_internal_get_capability(u32 *caps, u32 num_dwords, bool is_interop)
 {
 	return -SYNX_INVALID;
 }
@@ -127,9 +140,23 @@ static inline ssize_t synx_read(struct file *filep,
 	return -SYNX_INVALID;
 }
 
+// Stub wrapper for write operation
+static inline ssize_t synx_write(struct file *filep,
+	const char __user *buf, size_t size, loff_t *f_pos)
+{
+	return -SYNX_INVALID;
+}
+
 // Stub wrapper for poll operation
 static inline unsigned int synx_poll(struct file *filep,
 	struct poll_table_struct *poll_table)
+{
+	return -SYNX_INVALID;
+}
+
+// Stub wrapper for poll_read operation
+static inline int synx_internal_poll_read(struct synx_session *session,
+	struct synx_userpayload_indv_info *info)
 {
 	return -SYNX_INVALID;
 }
@@ -137,5 +164,6 @@ static inline unsigned int synx_poll(struct file *filep,
 
 int synx_open(struct inode *inode, struct file *filep);
 int synx_close(struct inode *inode, struct file *filep);
-
+void synx_dma_fence_callback(struct dma_fence *fence, struct dma_fence_cb *cb);
+void synx_test_fence_release(struct dma_fence *fence);
 #endif /* __SYNX_INTERNAL_H__ */

@@ -18,6 +18,10 @@
 #define SYNX_CALLBACK_RESULT_FAILED          3
 #define SYNX_CALLBACK_RESULT_CANCELED        4
 
+/* synx event states */
+#define SYNX_EVENT_READ                      1
+#define SYNX_EVENT_CLOSE                     2
+
 /**
  * struct synx_info - Sync object creation information
  *
@@ -189,6 +193,27 @@ struct synx_signal_v2 {
 	__u64 reserved;
 };
 
+/**
+ * struct synx_signal_indv_info - Synx signal indv info
+ *
+ * @h_synx      : Synx object handle
+ * @flags       : Synx signal flags, see enum synx_signal_flags for detail
+ * @status      : Status of signaling, see enum synx_signal_status for supported statuses, provide
+ *                value greater than SYNX_STATE_SIGNALED_MAX for custom notification
+ * @signal_idx  : pointer to tx queue write index (filled by the function
+ *                if SYNX_SIGNAL_DELAY is set in flags); supported for
+ *                SYNX_HW_FENCE and SYNX_FENCE_DIRECT clients only, not by other clients
+ * @client_data : 64-bit client data propagated to waiting clients
+ * @reserved    : Reserved
+ */
+struct synx_signal_indv_info {
+	__u32 h_synx;
+	__u32 flags;
+	__u32 status;
+	__u32 signal_idx;
+	__u64 client_data;
+	__u64 reserved;
+};
 /**
  * struct synx_merge - Merge information for synx objects
  *
@@ -364,6 +389,7 @@ struct synx_fence_fd {
  * @fd                : native fence associated with synx object
  * @client_data       : 64-bit client metadata associated with synx object
  * @max_global_fences : maximum number of fences used for cross-core signaling
+ * @is_reusable       : 32-bit variable indicating if synx object is a reusable fence
  * @reserved          : Reserved
  */
 struct synx_get_info {
@@ -377,6 +403,7 @@ struct synx_get_info {
 		__s32 fd;
 		__u64 client_data;
 		__u64 max_global_fences;
+		__u32 is_reusable;
 	};
 	union{
 		__u64 reserved;
@@ -463,18 +490,35 @@ struct synx_release_indv_info {
 	__u32 reserved;
 };
 
+
 /**
  * struct synx_op_arr_info - Generic list info for synx objects for batch
  *                           operations.
  *
- * @synx_objs :  list of individual handle info
- * @num_objs  :  Number of objects in the array
+ * @list      : list of individual handle info
+ * @num_objs  : Number of objects in the array
  * @reserved  : Reserved
  */
 struct synx_op_arr_info {
 	__u64 list;
 	__u32 num_objs;
 	__u32 reserved;
+};
+
+/**
+ * struct synx_signal_n_info - Signal information for synx objects
+ * @type         : Signal params type
+ * @reserved     : Reserved
+ * @indv         : params to signal a single synx handle
+ * @arr          : Params to signal an array of handles
+ */
+struct synx_signal_n_info {
+	__u32 type;
+	__u32 reserved;
+	union {
+		struct synx_signal_indv_info indv;
+		struct synx_op_arr_info arr;
+	};
 };
 
 /**
@@ -538,6 +582,27 @@ struct synx_recover_info {
 	__u32 reserved;
 };
 
+/**
+ * struct synx_get_sys_info - System info get parameters
+ *
+ * @client_type : Client type (SYNX_CLIENT, HW_FENCE_CLIENT, or SYNX_INTEROP_CLIENT)
+ * @type        : Query type (e.g., SYNX_GET_CAPABILITY)
+ * @num_dwords  : Number of u32 dwords in the pre-allocated caps array
+ * @caps        : User pointer to array for capability bitmask
+ * @reserved    : Reserved for future use
+ */
+struct synx_get_sys_info {
+	__u32 client_type;
+	__u32 type;
+	union {
+		__u64 num_dwords;
+	};
+	union {
+		__u64 caps;
+	};
+	__u64 reserved;
+};
+
 #define SYNX_PRIVATE_MAGIC_NUM 's'
 
 #define SYNX_PRIVATE_IOCTL_CMD \
@@ -568,4 +633,6 @@ struct synx_recover_info {
 #define SYNX_REGISTER_PAYLOAD_N              22
 #define SYNX_DEREGISTER_PAYLOAD_N            23
 #define SYNX_GET                             24
+#define SYNX_POLL_READ                       25
+#define SYNX_GET_SYS_INFO                    26
 #endif /* __UAPI_SYNX_H__ */

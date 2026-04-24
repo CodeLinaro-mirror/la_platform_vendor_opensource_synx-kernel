@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef __SYNX_HW_FENCE_H
@@ -64,6 +64,20 @@ int synx_hwfence_recover(enum synx_client_id id);
 int synx_hwfence_enable_resources(enum synx_client_id id, enum synx_resource_type resource,
 	bool enable);
 
+/**
+ * synx_hwfence_get_capability - Get hw-fence implementation capabilities
+ *
+ * Populates the capability bitmask in caps for all capabilities supported
+ * by the hw-fence implementation, up to num_dwords dwords.
+ *
+ * @param caps       : Pointer to pre-allocated u32 array for capability bitmask
+ * @param num_dwords : Number of u32 dwords in the caps array
+ * @param is_interop : true if querying for interop mode capabilities
+ *
+ * @return Status of operation. Negative in case of error. SYNX_SUCCESS otherwise.
+ */
+int synx_hwfence_get_capability(u32 *caps, u32 num_dwords, bool is_interop);
+
 #else /* CONFIG_QTI_HW_FENCE */
 static inline int synx_hwfence_init_ops(struct synx_ops *ops)
 {
@@ -83,6 +97,11 @@ static inline int synx_hwfence_recover(enum synx_client_id id)
 
 static inline int synx_hwfence_enable_resources(enum synx_client_id id,
 	enum synx_resource_type resource, bool enable)
+{
+	return -SYNX_INVALID;
+}
+
+static inline int synx_hwfence_get_capability(u32 *caps, u32 num_dwords, bool is_interop)
 {
 	return -SYNX_INVALID;
 }

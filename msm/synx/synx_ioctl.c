@@ -195,7 +195,7 @@ static int synx_handle_get(struct synx_private_ioctl_arg *k_ioctl,
 		params.type == SYNX_GET_STATUS_PARAMS ||
 		params.type == SYNX_GET_CLIENT_DATA) {
 		params.h_synx = get_info.synx_obj;
-	} else {
+	} else if (params.type != SYNX_GET_MAX_GLOBAL_FENCES) {
 		return -SYNX_INVALID;
 	}
 
@@ -555,6 +555,100 @@ static int synx_handle_signal(struct synx_private_ioctl_arg *k_ioctl,
 		signal_info.synx_state);
 }
 
+static int synx_handle_signal_n(struct synx_private_ioctl_arg *k_ioctl,
+	struct synx_session *session)
+{
+	int rc = 0;
+	struct synx_signal_n_info signal_info = {0};
+	struct synx_signal_n_params params = {0};
+	struct synx_signal_indv_info *arr_params = NULL;
+	u32 idx = 0;
+
+	if (k_ioctl->size != sizeof(signal_info))
+		return -SYNX_INVALID;
+
+	if (copy_from_user(&signal_info,
+			u64_to_user_ptr(k_ioctl->ioctl_ptr),
+			k_ioctl->size))
+		return -EFAULT;
+
+	if (signal_info.type == SYNX_SIGNAL_ARR_PARAMS) {
+		if (signal_info.arr.num_objs >= SYNX_MAX_OBJS || signal_info.arr.num_objs == 0
+			|| signal_info.arr.list == 0)
+			return -SYNX_INVALID;
+
+		arr_params = kcalloc(signal_info.arr.num_objs, sizeof(*arr_params), GFP_KERNEL);
+		if (IS_ERR_OR_NULL(arr_params))
+			return -ENOMEM;
+
+		if (copy_from_user(arr_params,
+				u64_to_user_ptr(signal_info.arr.list),
+				sizeof(*arr_params) * signal_info.arr.num_objs)) {
+			kfree(arr_params);
+			return -EFAULT;
+		}
+
+		params.type = SYNX_SIGNAL_ARR_PARAMS;
+		params.arr.num_fences = signal_info.arr.num_objs;
+		params.arr.list = kcalloc(params.arr.num_fences,
+				sizeof(struct synx_signal_indv_params), GFP_KERNEL);
+		if (IS_ERR_OR_NULL(params.arr.list)) {
+			kfree(arr_params);
+			return -ENOMEM;
+		}
+
+		for (idx = 0; idx < params.arr.num_fences; idx++) {
+			params.arr.list[idx].h_synx = arr_params[idx].h_synx;
+			params.arr.list[idx].flags = arr_params[idx].flags;
+			params.arr.list[idx].status = arr_params[idx].status;
+			params.arr.list[idx].client_data = arr_params[idx].client_data;
+			params.arr.list[idx].signal_idx = &arr_params[idx].signal_idx;
+		}
+
+		rc = synx_signal_n(session, &params);
+		if (rc)
+			dprintk(SYNX_ERR, "synx_signal_n batch failed %d\n", rc);
+
+		for (idx = 0; idx < params.arr.num_fences; idx++) {
+			dprintk(SYNX_DBG, "Handle: %u signaled\n",
+				params.arr.list[idx].h_synx);
+		}
+
+		if (copy_to_user(u64_to_user_ptr(signal_info.arr.list),
+			arr_params,
+			sizeof(*arr_params) * signal_info.arr.num_objs)) {
+			rc = -EFAULT;
+			dprintk(SYNX_ERR, "Copy to user failed for batch signal.\n");
+		}
+
+		kfree(arr_params);
+		kfree(params.arr.list);
+	} else if (signal_info.type == SYNX_SIGNAL_INDV_PARAMS) {
+		params.type              = SYNX_SIGNAL_INDV_PARAMS;
+		params.indv.h_synx       = signal_info.indv.h_synx;
+		params.indv.flags        = signal_info.indv.flags;
+		params.indv.status       = signal_info.indv.status;
+		params.indv.client_data  = signal_info.indv.client_data;
+		params.indv.signal_idx   = &signal_info.indv.signal_idx;
+		rc = synx_signal_n(session, &params);
+
+		if (rc != SYNX_SUCCESS) {
+			dprintk(SYNX_ERR, "synx_signal_n failed %d", rc);
+		} else {
+			dprintk(SYNX_DBG, "synx_signal_n successful\n");
+			if (copy_to_user(u64_to_user_ptr(k_ioctl->ioctl_ptr),
+					&signal_info,
+					k_ioctl->size))
+				rc = -EFAULT;
+		}
+	} else {
+		dprintk(SYNX_ERR, "Invalid type passed %d", signal_info.type);
+		rc = -SYNX_INVALID;
+	}
+
+	return rc;
+}
+
 static int synx_handle_merge(struct synx_private_ioctl_arg *k_ioctl,
 	struct synx_session *session)
 {
@@ -609,7 +703,7 @@ static int synx_handle_merge(struct synx_private_ioctl_arg *k_ioctl,
 static int synx_handle_merge_n(struct synx_private_ioctl_arg *k_ioctl,
 	struct synx_session *session)
 {
-	u32 *h_synxs;
+	u32 *h_synxs = NULL;
 	int result = 0;
 	struct synx_merge_n_info merge_n_info;
 	struct synx_merge_n_params params = {0};
@@ -1146,6 +1240,9 @@ long synx_ioctl(struct file *filep,
 		break;
 	case SYNX_SIGNAL:
 		rc = synx_handle_signal(&k_ioctl, session);
+		break;
+	case SYNX_SIGNAL_N:
+		rc = synx_handle_signal_n(&k_ioctl, session);
 		break;
 	case SYNX_MERGE:
 		rc = synx_handle_merge(&k_ioctl, session);

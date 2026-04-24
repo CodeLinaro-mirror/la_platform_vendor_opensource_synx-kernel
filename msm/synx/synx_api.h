@@ -13,6 +13,18 @@
 #include "synx_err.h"
 #include "synx_extension_api.h"
 
+#define SYNX_MAJOR_VERSION 2
+#define SYNX_MINOR_VERSION 6
+#define SYNX_PATCH_VERSION 0
+
+#define SYNX_VERSION(major, minor, patch)	\
+	(((((u32)(major)) & 0xFU) << 28) |		\
+	 ((((u32)(minor)) & 0xFFFU) << 16) |	\
+	 (((u32)(patch)) & 0xFFFFU))
+
+#define SYNX_API_VERSION \
+	SYNX_VERSION(SYNX_MAJOR_VERSION, SYNX_MINOR_VERSION, SYNX_PATCH_VERSION)
+
 #define SYNX_NO_TIMEOUT        ((u64)-1)
 
 /**
@@ -31,6 +43,92 @@
  * SYNX_NO_CLIENT_DATA      : No client data is associated with Synx obj
  */
 #define SYNX_NO_CLIENT_DATA 0
+
+/**
+ * SYNX_CAPABILITY_DWORDS :   Number of u32 dwords to be allocated for capability bitmask array.
+ *                            This value may increase in future releases as new capabilities
+ *                            are added beyond a 32-bit boundary. Clients should use this macro
+ *                            to allocate the caps array and set the num_dwords field in
+ *                            struct synx_get_sys_info_params.
+ */
+#define SYNX_CAPABILITY_DWORDS 2
+
+/**
+ * enum synx_capability_flags - Capability bit definitions
+ *
+ * Each enumerator identifies a single capability bit within the bitmask array
+ * returned by synx_get_sys_info(). Use SYNX_CAP_IS_SET() to test a bit.
+ *
+ * SYNX_CAP_SIGNAL_N     : Signal-N capability
+ * SYNX_CAP_ASYNC_WAIT_N : Async-wait-N capability
+ * SYNX_CAP_REUSE        : Reuse capability
+ * SYNX_CAP_IMPORT_V2    : Import-V2 capability
+ * SYNX_CAP_MERGE_N      : Merge-N capability
+ * SYNX_CAP_MAX          : Max Capability (used for internal checks)
+ */
+enum synx_capability_flags {
+	SYNX_CAP_SIGNAL_N     = 0,
+	SYNX_CAP_ASYNC_WAIT_N = 1,
+	SYNX_CAP_REUSE        = 2,
+	SYNX_CAP_IMPORT_V2    = 3,
+	SYNX_CAP_MERGE_N      = 4,
+	SYNX_CAP_MAX          = 5,
+};
+
+/**
+ * SYNX_CAP_IS_SET - Check if a capability is set in the caps array
+ *
+ * Returns 0 if cap >= SYNX_CAP_MAX, caps is NULL, num_dwords is 0,
+ * or the dword index for cap falls beyond num_dwords.
+ *
+ * @caps       : Pointer to u32 caps array
+ * @num_dwords : Number of u32 dwords in the caps array
+ * @cap        : Capability to check (enum synx_capability_flags value)
+ */
+#define SYNX_CAP_IS_SET(caps, num_dwords, cap) \
+	(((cap) < SYNX_CAP_MAX) && (caps) && ((num_dwords) > 0) && \
+	(((cap) / 32) < (num_dwords)) && \
+	((caps)[(cap) / 32] & (1U << ((cap) % 32))))
+
+/**
+ * enum synx_client_type - Client implementation type for synx_get_sys_info routing
+ *
+ * SYNX_CLIENT          : synx to synx support
+ * HW_FENCE_CLIENT      : hw-fence to hw-fence support
+ * SYNX_INTEROP_CLIENT  : synx to hw-fence or hw-fence to synx
+ */
+enum synx_client_type {
+	SYNX_CLIENT         = 0,
+	HW_FENCE_CLIENT     = 1,
+	SYNX_INTEROP_CLIENT = 2,
+};
+
+/**
+ * enum synx_get_sys_info_type - System info get params type
+ *
+ * SYNX_GET_CAPABILITY : Query synx capabilities
+ */
+enum synx_get_sys_info_type {
+	SYNX_GET_CAPABILITY = 0x01,
+};
+
+/**
+ * struct synx_get_sys_info_params - Parameters for synx_get_sys_info
+ *
+ * @type       : Query type filled by client (enum synx_get_sys_info_type)
+ * @num_dwords : Number of u32 dwords in the pre-allocated caps array (filled by client).
+ *               Set to SYNX_CAPABILITY_DWORDS.
+ * @caps       : Output u32 array to be filled with capability bitmask (filled by function)
+ */
+struct synx_get_sys_info_params {
+	enum synx_get_sys_info_type type;
+	union {
+		u64 num_dwords;
+	};
+	union {
+		u32 *caps;
+	};
+};
 
 /* synx object states */
 #define SYNX_STATE_INVALID             0    // Invalid synx object
@@ -107,12 +205,21 @@ enum synx_init_flags {
  *                            (NOT SUPPORTED)
  * SYNX_IMPORT_REUSABLE     : Flag to inform that this synx handle supports repeated signaling.
  *                            Client must pass:
- *                            a. null ptr through fence variable to create reusable fence
+ *                            a. null ptr through fence variable to create reusable fence.
+ *                               To create synx reusable handle client must set flag as follows:
+ *                               SYNX_IMPORT_GLOBAL_FENCE | SYNX_IMPORT_REUSABLE
+ *                               to create a reusable synx handle as a global synx handle.
+ *                               SYNX_IMPORT_LOCAL_FENCE | SYNX_IMPORT_REUSABLE
+ *                               to create a reusable synx handle as a local synx handle.
  *                            b. unsignaled synx handle through fence variable to import
  *                               reusable fence
  *                            If client passes SYNX_IMPORT_DMA_FENCE with SYNX_IMPORT_REUSABLE
- *                            then synx_import returns a failure as reusable fence dosen't
+ *                            then synx_import returns a failure as reusable fence doesn't
  *                            have native dma-fence support.
+ *                            Synchronous wait (using synx_wait) and merge
+ *                            (using synx_merge/synx_merge_n) operations on
+ *                            Reusable fence are NOT SUPPORTED.
+ *                            Interop on Reusable fence is NOT SUPPORTED.
  */
 enum synx_import_flags {
 	SYNX_IMPORT_LOCAL_FENCE  = 0x01,
@@ -865,12 +972,14 @@ struct synx_read_n_params {
  * SYNX_GET_FENCE_PARAMS      : Get native fence associated with synx object
  * SYNX_GET_CLIENT_DATA       : Get 64-bit client metadata associated with synx object
  * SYNX_GET_MAX_GLOBAL_FENCES : Get maximum number of fences used for cross-core signaling
+ * SYNX_GET_IS_REUSABLE_FENCE : Get handle type, whether it is reusable or non reusable fence
  */
 enum synx_get_type {
 	SYNX_GET_STATUS_PARAMS = 0x01,
 	SYNX_GET_FENCE_PARAMS = 0x02,
 	SYNX_GET_CLIENT_DATA = 0x03,
 	SYNX_GET_MAX_GLOBAL_FENCES = 0x04,
+	SYNX_GET_IS_REUSABLE_FENCE = 0x05,
 };
 
 /**
@@ -883,6 +992,8 @@ enum synx_get_type {
  * @client_data       : 64-bit client metadata associated with synx object, filled by function call
  * @max_global_fences : maximum number of fences used for cross-core signaling, filled by
  *                      function call
+ * @is_reusable       : 32-bit variable indicating if synx object is a reusable fence, filled by
+ *                      function call.
  */
 struct synx_get_params {
 	enum synx_get_type type;
@@ -892,6 +1003,7 @@ struct synx_get_params {
 		void *fence;
 		u64 client_data;
 		u64 max_global_fences;
+		u32 is_reusable;
 	};
 };
 
@@ -1358,5 +1470,15 @@ int synx_enable_resources(enum synx_client_id id, enum synx_resource_type resour
  * @return Status of operation. Negative in case of error, SYNX_SUCCESS otherwise.
  */
 int synx_get(struct synx_session *session, struct synx_get_params *params);
+
+/**
+ * synx_get_sys_info - Get system information
+ *
+ * @param type   : Client type; determines routing to synx-core or hw-fence
+ * @param params : Pointer to synx_get_sys_info_params
+ *
+ * @return Status of operation. Negative in case of error. SYNX_SUCCESS otherwise.
+ */
+int synx_get_sys_info(enum synx_client_type type, struct synx_get_sys_info_params *params);
 
 #endif /* __SYNX_API_H__ */
