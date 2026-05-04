@@ -277,3 +277,83 @@ int synx_signal_n(struct synx_session *session, struct synx_signal_n_params *par
 	return session->ops->signal_n(session, params);
 }
 EXPORT_SYMBOL_GPL(synx_signal_n);
+
+int synx_get_sys_info(enum synx_client_type type, struct synx_get_sys_info_params *params)
+{
+	int ret = SYNX_SUCCESS;
+	u32 num_dwords, i;
+	u32 hwfence_caps[SYNX_CAPABILITY_DWORDS] = {0};
+
+	if (!params) {
+		dprintk(SYNX_ERR, "invalid params\n");
+		return -SYNX_INVALID;
+	}
+
+	if (params->type != SYNX_GET_CAPABILITY) {
+		dprintk(SYNX_ERR, "unsupported sys info type: %d\n", params->type);
+		return -SYNX_INVALID;
+	}
+	if (params->type == SYNX_GET_CAPABILITY) {
+		if (!params->caps || !params->num_dwords) {
+			dprintk(SYNX_ERR, "invalid capability params\n");
+			return -SYNX_INVALID;
+		}
+
+		num_dwords = (u32)params->num_dwords;
+		if (num_dwords > SYNX_CAPABILITY_DWORDS) {
+			dprintk(SYNX_ERR, "num_dwords %u exceeds SYNX_CAPABILITY_DWORDS %u\n",
+				num_dwords, SYNX_CAPABILITY_DWORDS);
+			return -SYNX_INVALID;
+		}
+
+		switch (type) {
+		case SYNX_CLIENT:
+			ret = synx_internal_get_capability(params->caps, num_dwords, false);
+			if (ret)
+				dprintk(SYNX_ERR, "synx_internal_get_capability failed: %d\n", ret);
+			break;
+
+		case HW_FENCE_CLIENT:
+			ret = synx_hwfence_get_capability(params->caps, num_dwords, false);
+			if (ret)
+				dprintk(SYNX_ERR, "synx_hwfence_get_capability failed: %d\n", ret);
+			break;
+
+		case SYNX_INTEROP_CLIENT: {
+			/*
+			 * Get combined capabilities (AND of synx and hw-fence).
+			 * Only capabilities supported by BOTH implementations are returned.
+			 * Each implementation clears its own interop-incompatible bits before
+			 * the AND is applied.
+			 */
+			ret = synx_internal_get_capability(params->caps, num_dwords, true);
+			if (ret) {
+				dprintk(SYNX_ERR, "synx_internal_get_capability failed: %d\n", ret);
+				break;
+			}
+			ret = synx_hwfence_get_capability(hwfence_caps, num_dwords, true);
+			if (ret) {
+				dprintk(SYNX_ERR, "synx_hwfence_get_capability failed: %d\n", ret);
+				break;
+			}
+			for (i = 0; i < num_dwords; i++)
+				params->caps[i] &= hwfence_caps[i];
+			break;
+		}
+
+		default:
+			dprintk(SYNX_ERR, "invalid client type: %d\n", type);
+			ret = -SYNX_INVALID;
+			break;
+		}
+
+		if (!ret) {
+			for (i = 0; i < num_dwords; i++)
+				dprintk(SYNX_DBG, "synx capability: caps[%u]=0x%08x\n",
+					i, params->caps[i]);
+		}
+	}
+
+	return ret;
+}
+EXPORT_SYMBOL_GPL(synx_get_sys_info);
