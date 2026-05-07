@@ -30,16 +30,20 @@ LOCAL_PATH := $(call my-dir)
 LOCAL_MODULE_DDK_BUILD := true
 LOCAL_MODULE_KO_DIRS := msm/synx/synx-driver.ko
 
+# Restore synx-driver-symvers for all platforms except seraph,
+# as downstream modules (e.g. video-driver) depend on it
 include $(CLEAR_VARS)
+ifeq ($(TARGET_BOARD_PLATFORM), seraph)
 # For incremental compilation
-LOCAL_SRC_FILES           := $(wildcard $(LOCAL_PATH)/**/*) $(wildcard $(LOCAL_PATH)/*)
-LOCAL_MODULE              := synx-driver-symvers
-LOCAL_MODULE_KBUILD_NAME  := Module.symvers
-#LOCAL_MODULE_STEM         := Module.symvers
-LOCAL_MODULE_PATH         := $(KERNEL_MODULES_OUT)
+LOCAL_SRC_FILES          := $(wildcard $(LOCAL_PATH)/**/*) $(wildcard $(LOCAL_PATH)/*)
+LOCAL_MODULE             := synx-driver-symvers
+LOCAL_MODULE_KBUILD_NAME := Module.symvers
+#LOCAL_MODULE_STEM        := Module.symvers
+LOCAL_MODULE_PATH        := $(KERNEL_MODULES_OUT)
 # Include kp_module.ko in the /vendor/lib/modules (vendor.img)
 # BOARD_VENDOR_KERNEL_MODULES += $(LOCAL_MODULE_PATH)/$(LOCAL_MODULE)
 include $(DLKM_DIR)/Build_external_kernelmodule.mk
+endif
 
 include $(CLEAR_VARS)
 # For incremental compilation
