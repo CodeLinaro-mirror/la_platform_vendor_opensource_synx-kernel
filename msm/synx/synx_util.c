@@ -169,7 +169,7 @@ int synx_dma_add_cb_no_enable_sig(struct dma_fence *fence,
 }
 
 int synx_util_add_callback(struct synx_coredata *synx_obj,
-	u32 h_synx)
+	u32 h_synx, bool may_sleep)
 {
 	int rc;
 	struct synx_signal_cb *signal_cb;
@@ -177,7 +177,10 @@ int synx_util_add_callback(struct synx_coredata *synx_obj,
 	if (IS_ERR_OR_NULL(synx_obj))
 		return -SYNX_INVALID;
 
-	signal_cb = kzalloc(sizeof(*signal_cb), GFP_ATOMIC);
+	if (may_sleep)
+		signal_cb = kzalloc(sizeof(*signal_cb), GFP_KERNEL);
+	else
+		signal_cb = kzalloc(sizeof(*signal_cb), GFP_ATOMIC);
 	if (IS_ERR_OR_NULL(signal_cb)) {
 		dprintk(SYNX_ERR, "signal_cb allocation failed\n");
 		return -SYNX_NOMEM;
@@ -1106,12 +1109,16 @@ struct synx_handle_coredata *synx_util_acquire_handle(
 struct synx_map_entry *synx_util_insert_to_map(
 	struct synx_coredata *synx_obj,
 	u32 h_synx, u32 flags,
-	bool map_entry_can_exist)
+	bool map_entry_can_exist,
+	bool may_sleep)
 {
 	struct synx_map_entry *map_entry;
 	struct synx_map_entry *curr;
 
-	map_entry = kzalloc(sizeof(*map_entry), GFP_ATOMIC);
+	if (may_sleep)
+		map_entry = kzalloc(sizeof(*map_entry), GFP_KERNEL);
+	else
+		map_entry = kzalloc(sizeof(*map_entry), GFP_ATOMIC);
 	if (IS_ERR_OR_NULL(map_entry)) {
 		dprintk(SYNX_ERR, "map_entry allocation failed\n");
 		return ERR_PTR(-SYNX_NOMEM);
