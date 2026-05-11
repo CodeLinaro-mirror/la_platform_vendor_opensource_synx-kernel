@@ -25,7 +25,7 @@ endif
 ###########################################################
 
 DLKM_DIR   := $(TOP)/device/qcom/common/dlkm
-
+SKIP_SYMVERS := art
 LOCAL_PATH := $(call my-dir)
 LOCAL_MODULE_DDK_BUILD := true
 LOCAL_MODULE_KO_DIRS := msm/synx/synx-driver.ko
@@ -33,7 +33,7 @@ LOCAL_MODULE_KO_DIRS := msm/synx/synx-driver.ko
 # Restore synx-driver-symvers for all platforms except seraph,
 # as downstream modules (e.g. video-driver) depend on it
 include $(CLEAR_VARS)
-ifeq ($(TARGET_BOARD_PLATFORM), seraph)
+ifeq ($(filter $(TARGET_BOARD_PLATFORM),$(SKIP_SYMVERS)),)
 # For incremental compilation
 LOCAL_SRC_FILES          := $(wildcard $(LOCAL_PATH)/**/*) $(wildcard $(LOCAL_PATH)/*)
 LOCAL_MODULE             := synx-driver-symvers
