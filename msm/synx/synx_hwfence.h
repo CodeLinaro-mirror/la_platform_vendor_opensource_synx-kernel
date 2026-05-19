@@ -8,6 +8,22 @@
 
 #if IS_ENABLED(CONFIG_QTI_HW_FENCE)
 /**
+ * Capability tables for hw-fence implementation.
+ * Used by synx_hwfence_get_capability().
+ */
+static const enum synx_capability_flags synx_hwfence_caps[] = {
+	SYNX_CAP_SIGNAL_N,
+	SYNX_CAP_ASYNC_WAIT_N,
+	SYNX_CAP_REUSE,
+	SYNX_CAP_IMPORT_V2,
+	SYNX_CAP_MERGE_N,
+};
+
+static const enum synx_capability_flags synx_hwfence_interop_clear[] = {
+	SYNX_CAP_REUSE,
+};
+
+/**
  * synx_hwfence_init_ops - Initialize hw-fence operations in synx ops
  *
  * Populates function pointers in synx_ops struct

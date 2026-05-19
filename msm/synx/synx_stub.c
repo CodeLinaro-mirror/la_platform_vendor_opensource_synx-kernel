@@ -31,6 +31,28 @@ static const struct file_operations synx_fops = {
 #endif
 };
 
+#if IS_ENABLED(CONFIG_QTI_HW_FENCE)
+int synx_hwfence_get_capability(u32 *caps, u32 num_dwords, bool is_interop)
+{
+	u32 i;
+
+	if (IS_ERR_OR_NULL(caps) || num_dwords == 0)
+		return -SYNX_INVALID;
+
+	memset(caps, 0, num_dwords * sizeof(u32));
+
+	for (i = 0; i < ARRAY_SIZE(synx_hwfence_caps); i++)
+		SYNX_CAP_SET(caps, num_dwords, synx_hwfence_caps[i]);
+
+	if (is_interop) {
+		for (i = 0; i < ARRAY_SIZE(synx_hwfence_interop_clear); i++)
+			SYNX_CAP_CLEAR(caps, num_dwords, synx_hwfence_interop_clear[i]);
+	}
+
+	return SYNX_SUCCESS;
+}
+#endif /* CONFIG_QTI_HW_FENCE */
+
 static int __init synx_init(void)
 {
 	int rc;
