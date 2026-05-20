@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022, 2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #define pr_fmt(fmt) "synx: " fmt
 
@@ -11,12 +11,6 @@
 
 #include "synx_api.h"
 #include "synx_util.h"
-
-static DECLARE_HASHTABLE(synx_global_key_tbl, 8);
-static DECLARE_HASHTABLE(synx_camera_id_tbl, 8);
-
-spinlock_t camera_tbl_lock;
-spinlock_t global_tbl_lock;
 
 extern void synx_external_callback(s32 sync_obj, int status, void *data);
 
@@ -148,7 +142,6 @@ void synx_util_object_destroy(struct synx_coredata *synx_obj)
 	struct synx_bind_desc *bind_desc;
 	struct bind_operations *bind_ops;
 	struct synx_external_data *data;
-	struct hash_key_data *entry = NULL;
 
 	/* clear all the undispatched callbacks */
 	list_for_each_entry_safe(synx_cb,
@@ -169,14 +162,6 @@ void synx_util_object_destroy(struct synx_coredata *synx_obj)
 			pr_err("bind ops fail id: %d, type: %u\n",
 				sync_id, type);
 			continue;
-		}
-
-		/* clear the hash table entry */
-		entry = synx_util_release_data(sync_id, type);
-		if (entry && type == SYNX_TYPE_CSL) {
-			spin_lock_bh(&camera_tbl_lock);
-			kref_put(&entry->refcount, synx_util_destroy_data);
-			spin_unlock_bh(&camera_tbl_lock);
 		}
 
 		rc = bind_ops->deregister_callback(
@@ -221,22 +206,23 @@ int synx_util_init_handle(struct synx_client *client,
 {
 	long idx = 0;
 	s32 h_synx = 0;
-	u8 unique_id;
+	u16 unique_id;
 	struct synx_handle_coredata *synx_data;
 
 	if (!client || !synx_obj)
 		return -EINVAL;
 
-	h_synx = (client->id & SYNX_CLIENT_ENCODE_MASK);
-	h_synx <<= SYNX_OBJ_HANDLE_SHIFT;
-	idx = synx_util_get_free_handle(client->bitmap, SYNX_MAX_OBJS);
-	if (idx >= SYNX_MAX_OBJS)
-		return -ENOMEM;
-	do {
-		get_random_bytes(&unique_id, sizeof(unique_id));
-	} while (!unique_id);
-	h_synx |= unique_id;
-	h_synx <<= SYNX_OBJ_HANDLE_SHIFT;
+	if (!synx_util_is_global_object(synx_obj)) {
+		idx = synx_util_get_free_handle(client->bitmap, SYNX_MAX_OBJS);
+		if (idx >= SYNX_MAX_OBJS)
+			return -ENOMEM;
+		do {
+			get_random_bytes(&unique_id, sizeof(unique_id));
+		} while (!unique_id);
+		h_synx = unique_id;
+		h_synx <<= SYNX_OBJ_HANDLE_SHIFT;
+	}
+
 	h_synx |= (idx & SYNX_OBJ_HANDLE_MASK);
 
 	mutex_lock(&client->synx_table_lock[idx]);
@@ -482,10 +468,8 @@ static u32 __fence_state(struct dma_fence *fence, bool locked)
 		state = SYNX_STATE_SIGNALED_EXTERNAL;
 		break;
 	case -SYNX_STATE_SIGNALED_ERROR:
-		state = SYNX_STATE_SIGNALED_ERROR;
-		break;
 	default:
-		state = (u32)(-status);
+		state = SYNX_STATE_SIGNALED_ERROR;
 	}
 
 	return state;
@@ -603,70 +587,6 @@ struct synx_handle_coredata *synx_util_acquire_handle(
 	return synx_handle;
 }
 
-int synx_util_update_handle(struct synx_client *client,
-	s32 h_synx, u32 sync_id, u32 type,
-	struct synx_handle_coredata **synx_handle)
-{
-	int rc = 0;
-	bool loop;
-	u32 idx = synx_util_handle_index(h_synx);
-	struct synx_handle_coredata *synx_data = NULL;
-	struct hash_key_data *entry = NULL;
-
-	if (!client || !synx_handle)
-		return -EINVAL;
-
-	do {
-		loop = false;
-		mutex_lock(&client->synx_table_lock[idx]);
-		synx_data = &client->synx_table[idx];
-		if (!synx_data->synx_obj) {
-			pr_err("[sess: %u] invalid object handle %d\n",
-				client->id, h_synx);
-			rc = -EINVAL;
-		} else if (synx_data->handle != h_synx) {
-			pr_err("[sess: %u] stale object handle %d\n",
-				client->id, h_synx);
-			rc = -EINVAL;
-		} else if (!kref_read(&synx_data->internal_refcount)) {
-			pr_err("[sess: %u] destroyed object handle %d\n",
-				client->id, h_synx);
-			rc = -EINVAL;
-		} else {
-			if (kref_read(&synx_data->internal_refcount) == 1) {
-				entry = synx_util_retrieve_data(sync_id, type);
-				if (entry &&
-					((struct synx_coredata *)entry->data
-					!= synx_data->synx_obj)) {
-					/*
-					 * release existing coredata and replace.
-					 * this ensures that all external fence ids
-					 * are mapped to same coredata object, thus
-					 * eliminating roundtrip delays on signaling
-					 */
-					synx_util_put_object(synx_data->synx_obj);
-					synx_data->synx_obj = entry->data;
-					synx_util_get_object(synx_data->synx_obj);
-					*synx_handle = NULL;
-					/* release reference from retrieve data */
-					spin_lock_bh(&camera_tbl_lock);
-					kref_put(&entry->refcount, synx_util_destroy_data);
-					spin_unlock_bh(&camera_tbl_lock);
-				} else {
-					kref_get(&synx_data->internal_refcount);
-					*synx_handle = synx_data;
-				}
-			} else {
-				/* wait till other thread ref/s are released */
-				loop = true;
-			}
-		}
-		mutex_unlock(&client->synx_table_lock[idx]);
-	} while (loop);
-
-	return rc;
-}
-
 static void synx_util_destroy_handle(struct synx_handle_coredata *synx_data)
 {
 	long idx = synx_util_handle_index(synx_data->handle);
@@ -676,7 +596,7 @@ static void synx_util_destroy_handle(struct synx_handle_coredata *synx_data)
 	memset(synx_data, 0, sizeof(*synx_data));
 	clear_bit(idx, client->bitmap);
 	synx_util_put_object(synx_obj);
-	pr_debug("[sess: %u] handle %d destroyed %pK\n",
+	pr_debug("[sess: %u] handle %ld destroyed %pK\n",
 		client->id, idx, synx_obj);
 }
 
@@ -852,7 +772,7 @@ void synx_util_cb_dispatch(struct work_struct *cb_dispatch)
 	client = synx_get_client(synx_cb->session_id);
 	if (!client) {
 		pr_err("invalid session data %u in cb payload\n",
-			synx_cb->session_id);
+			synx_cb->session_id.client_id);
 		goto free;
 	}
 
@@ -914,7 +834,7 @@ struct synx_coredata *synx_util_import_object(struct synx_import_params *params)
 	if (!params)
 		return NULL;
 
-	ex_session_id.client_id = synx_util_client_id(params->h_synx);
+	ex_session_id.client_id = params->secure_key;
 
 	/* get the client exporting the synx handle */
 	ex_client = synx_get_client(ex_session_id);
@@ -941,7 +861,6 @@ struct synx_coredata *synx_util_import_object(struct synx_import_params *params)
 	if (synx_data->handle != params->h_synx) {
 		pr_err("[sess: %u] stale import handle %d\n",
 			ex_client->id, params->h_synx);
-		synx_obj = NULL;
 		goto fail;
 	}
 
@@ -1021,57 +940,7 @@ static int synx_util_export_external(struct synx_coredata *synx_obj,
 	return 0;
 }
 
-int synx_util_export_global(struct synx_client *client,
-	struct synx_export_params *params)
-{
-	int rc = 0;
-	struct synx_handle_coredata *synx_data;
-	struct synx_coredata *synx_obj;
-
-	if (!params || !params->secure_key)
-		return -EINVAL;
-
-	synx_data = synx_util_acquire_handle(client, params->h_synx);
-	synx_obj = synx_util_obtain_object(synx_data);
-	if (!synx_obj) {
-		pr_err("[sess: %u] invalid export handle %d\n",
-			client->id, params->h_synx);
-		rc = -EINVAL;
-		goto fail;
-	}
-
-	mutex_lock(&synx_obj->obj_lock);
-	/*
-	 * set the global key to the handle of the
-	 * first exporting handle.
-	 */
-	synx_obj->type |= SYNX_FLAG_GLOBAL_FENCE;
-	if (!synx_obj->global_key) {
-		synx_obj->global_key = (params->h_synx &
-			SYNX_CLIENT_IDX_OBJ_MASK);
-		rc = synx_util_save_data(synx_obj->global_key,
-			SYNX_GLOBAL_KEY_TBL, (void *)synx_obj);
-		if (rc) {
-			pr_err("[sess: %u] global export failed %d\n",
-				client->id, params->h_synx);
-			mutex_unlock(&synx_obj->obj_lock);
-			goto fail;
-		}
-	}
-	*params->secure_key = synx_obj->global_key;
-
-	if (synx_util_is_external_object(synx_obj))
-		rc = synx_util_export_external(synx_obj, params);
-	else
-		rc = synx_util_export_internal(synx_obj, params);
-	mutex_unlock(&synx_obj->obj_lock);
-
-fail:
-	synx_util_release_handle(synx_data);
-	return rc;
-}
-
-int synx_util_export_local(struct synx_client *client,
+int synx_util_export_object(struct synx_client *client,
 	struct synx_export_params *params)
 {
 	int rc = 0;
@@ -1091,22 +960,27 @@ int synx_util_export_local(struct synx_client *client,
 		goto fail;
 	}
 
-	mutex_lock(&synx_obj->obj_lock);
-	if (synx_util_is_external_object(synx_obj))
-		rc = synx_util_export_external(synx_obj, params);
-	else
-		rc = synx_util_export_internal(synx_obj, params);
-	mutex_unlock(&synx_obj->obj_lock);
-
-	if (rc)
-		goto fail;
-
 	idx = synx_util_handle_index(params->h_synx);
 	mutex_lock(&client->synx_table_lock[idx]);
 	if (!kref_read(&synx_data->import_refcount))
 		kref_init(&synx_data->import_refcount);
 	else
 		kref_get(&synx_data->import_refcount);
+
+	*params->secure_key = client->id;
+
+	if (synx_util_is_external_object(synx_data->synx_obj))
+		rc = synx_util_export_external(synx_data->synx_obj, params);
+	else
+		rc = synx_util_export_internal(synx_data->synx_obj, params);
+
+	/* release the import reference acquired above on failure */
+	if (rc)
+		kref_put(&synx_data->import_refcount,
+			synx_util_destroy_import_handle);
+	else
+		pr_debug("[sess: %u] handle %d export successful\n",
+			client->id, params->h_synx);
 	mutex_unlock(&client->synx_table_lock[idx]);
 
 fail:
@@ -1146,12 +1020,12 @@ struct synx_client *synx_get_client(struct synx_session session_id)
 	return client;
 }
 
-static void synx_client_cleanup(struct work_struct *cb_dispatch)
+static void synx_client_destroy(struct kref *kref)
 {
 	u32 i;
-	struct synx_cleanup_cb *client_cb = container_of(cb_dispatch,
-		struct synx_cleanup_cb, cb_dispatch);
-	struct synx_client *client = client_cb->data;
+	struct synx_client_metadata *client_metadata =
+		container_of(kref, struct synx_client_metadata, refcount);
+	struct synx_client *client = client_metadata->client;
 	struct synx_handle_coredata *synx_data;
 
 	/* go over all the remaining synx obj handles and clear them */
@@ -1175,36 +1049,12 @@ static void synx_client_cleanup(struct work_struct *cb_dispatch)
 		mutex_destroy(&client->synx_table_lock[i]);
 	}
 	mutex_destroy(&client->event_q_lock);
+	memset(client_metadata, 0, sizeof(*client_metadata));
+	clear_bit(synx_util_client_index(client->id), synx_dev->bitmap);
 
 	pr_info("[sess: %u] session destroyed %s, uid: %u\n",
 		client->id, client->name, client->id);
 	vfree(client);
-	kfree(client_cb);
-}
-
-static void synx_client_destroy(struct kref *kref)
-{
-	struct synx_client_metadata *client_metadata =
-		container_of(kref, struct synx_client_metadata, refcount);
-	u32 id;
-	struct synx_cleanup_cb *client_cb;
-
-	if (!client_metadata->client) {
-		pr_err("error destroying session\n");
-		return;
-	}
-
-	client_cb = kzalloc(sizeof(*client_cb), GFP_KERNEL);
-	if (!client_cb)
-		return;
-
-	id = client_metadata->client->id;
-	client_cb->data = (void *)client_metadata->client;
-	memset(client_metadata, 0, sizeof(*client_metadata));
-	clear_bit(synx_util_client_index(id), synx_dev->bitmap);
-
-	INIT_WORK(&client_cb->cb_dispatch, synx_client_cleanup);
-	queue_work(synx_dev->work_queue, &client_cb->cb_dispatch);
 }
 
 void synx_put_client(struct synx_client *client)
@@ -1266,141 +1116,4 @@ void synx_util_log_error(u32 client_id, s32 h_synx, s32 err)
 	list_add(&err_node->node,
 		&synx_dev->error_list);
 	mutex_unlock(&synx_dev->error_lock);
-}
-
-int synx_util_init_table(void)
-{
-	hash_init(synx_global_key_tbl);
-	hash_init(synx_camera_id_tbl);
-
-	spin_lock_init(&global_tbl_lock);
-	spin_lock_init(&camera_tbl_lock);
-
-	return 0;
-}
-
-int synx_util_save_data(u32 key, u32 tbl, void *data)
-{
-	int rc = 0;
-	struct hash_key_data *entry;
-
-	if (!data)
-		return -EINVAL;
-
-	entry = kzalloc(sizeof(*entry), GFP_KERNEL);
-	if (!entry)
-		return -ENOMEM;
-
-	entry->key = key;
-	entry->data = data;
-	kref_init(&entry->refcount);
-
-	switch (tbl) {
-	case SYNX_CAMERA_ID_TBL:
-		synx_util_get_object((struct synx_coredata *) data);
-		spin_lock_bh(&camera_tbl_lock);
-		hash_add(synx_camera_id_tbl, &entry->node, key);
-		spin_unlock_bh(&camera_tbl_lock);
-		break;
-	case SYNX_GLOBAL_KEY_TBL:
-		synx_util_get_object((struct synx_coredata *) data);
-		spin_lock_bh(&global_tbl_lock);
-		hash_add(synx_global_key_tbl, &entry->node, key);
-		spin_unlock_bh(&global_tbl_lock);
-		break;
-	default:
-		pr_err("invalid hash table selection\n");
-		kfree(entry);
-		rc = -EINVAL;
-	}
-
-	return rc;
-}
-
-struct hash_key_data *synx_util_retrieve_data(u32 key,
-	u32 tbl)
-{
-	void *entry = NULL;
-	struct hash_key_data *curr = NULL;
-
-	switch (tbl) {
-	case SYNX_CAMERA_ID_TBL:
-		spin_lock_bh(&camera_tbl_lock);
-		hash_for_each_possible(synx_camera_id_tbl,
-			curr, node, key) {
-			if (curr->key == key) {
-				kref_get(&curr->refcount);
-				entry = curr;
-				break;
-			}
-		}
-		spin_unlock_bh(&camera_tbl_lock);
-		break;
-	case SYNX_GLOBAL_KEY_TBL:
-		spin_lock_bh(&global_tbl_lock);
-		hash_for_each_possible(synx_global_key_tbl,
-			curr, node, key) {
-			if (curr->key == key) {
-				kref_get(&curr->refcount);
-				entry = curr;
-				break;
-			}
-		}
-		spin_unlock_bh(&global_tbl_lock);
-		break;
-	default:
-		pr_err("invalid hash table selection %d\n",
-			tbl);
-	}
-
-	return entry;
-}
-
-struct hash_key_data *synx_util_release_data(u32 key,
-	u32 tbl)
-{
-	void *entry = NULL;
-	struct hash_key_data *curr = NULL;
-	struct hlist_node *tmp_node;
-
-	switch (tbl) {
-	case SYNX_CAMERA_ID_TBL:
-		spin_lock_bh(&camera_tbl_lock);
-		hash_for_each_possible_safe(synx_camera_id_tbl,
-			curr, tmp_node, node, key) {
-			if (curr->key == key) {
-				entry = curr;
-				hash_del(&curr->node);
-				break;
-			}
-		}
-		spin_unlock_bh(&camera_tbl_lock);
-		break;
-	case SYNX_GLOBAL_KEY_TBL:
-		spin_lock_bh(&global_tbl_lock);
-		hash_for_each_possible_safe(synx_global_key_tbl,
-			curr, tmp_node, node, key) {
-			if (curr->key == key) {
-				entry = curr;
-				hash_del(&curr->node);
-				break;
-			}
-		}
-		spin_unlock_bh(&global_tbl_lock);
-		break;
-	default:
-		pr_err("invalid hash table selection %d\n",
-			tbl);
-	}
-
-	return entry;
-}
-
-void synx_util_destroy_data(struct kref *kref)
-{
-	struct hash_key_data *entry =
-		container_of(kref, struct hash_key_data, refcount);
-
-	synx_util_put_object((struct synx_coredata *) entry->data);
-	kfree(entry);
 }

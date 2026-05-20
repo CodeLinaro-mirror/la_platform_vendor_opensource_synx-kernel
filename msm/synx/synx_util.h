@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022, 2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef __SYNX_UTIL_H__
@@ -10,8 +10,6 @@
 #include "synx_private.h"
 
 extern struct synx_device *synx_dev;
-extern spinlock_t camera_tbl_lock;
-extern spinlock_t global_tbl_lock;
 
 extern void synx_fence_callback(struct dma_fence *fence,
 	struct dma_fence_cb *cb);
@@ -54,19 +52,6 @@ static inline u32 synx_util_get_object_type(
 static inline u32 synx_util_client_index(u32 client_id)
 {
 	return (client_id & SYNX_CLIENT_HANDLE_MASK);
-}
-
-/**
- * @brief: Function to get the client session id from synx handle
- *
- * @param h_synx : Synx object handle
- *
- * @return Client metadata index.
- */
-static inline u32 synx_util_client_id(s32 h_synx)
-{
-	return ((h_synx >> SYNX_CLIENT_ENCODE_SHIFT) &
-		SYNX_CLIENT_ENCODE_MASK);
 }
 
 /**
@@ -354,28 +339,6 @@ struct synx_handle_coredata *synx_util_acquire_handle(
 	struct synx_client *client, s32 h_synx);
 
 /**
- * @brief: Function to update synx object handle - coredata mapping
- *
- * Function used during bind to ensure that all the external fence
- * id/s are mapped to same coredata structure, thereby avoiding
- * any roundtrip delays.
- *
- * @param client  : Pointer to client session
- * @param h_synx  : Synx object handle
- * @param sync_id : External fence id
- * @param type    : External fence type
- * @param handle  : Address of synx handle coredata pointer
- *                  If the sync id entry is not available, then
- *                  handle will contain valid pointer. If duplicate,
- *                  entry, handle will be NULL.
- *
- * @return Status of operation. Negative in case of error. Zero otherwise.
- */
-int synx_util_update_handle(struct synx_client *client,
-	s32 h_synx, u32 sync_id, u32 type,
-	struct synx_handle_coredata **handle);
-
-/**
  * @brief: Function to obtain the synx object
  *
  * @param synx_data : Pointer to synx object handle data
@@ -435,20 +398,7 @@ struct bind_operations *synx_util_get_bind_ops(u32 type);
  *
  * @return Status of operation. Negative in case of error. Zero otherwise.
  */
-int synx_util_export_local(struct synx_client *client,
-	struct synx_export_params *params);
-
-/**
- * @brief: Function to share the synx object to use by other cores
- *
- * Shares the synx object by sending a message
- *
- * @param client : Pointer to client session
- * @param params : Pointer to export params struct
- *
- * @return Status of operation. Negative in case of error. Zero otherwise.
- */
-int synx_util_export_global(struct synx_client *client,
+int synx_util_export_object(struct synx_client *client,
 	struct synx_export_params *params);
 
 /**
@@ -503,53 +453,5 @@ void synx_util_generate_timestamp(char *timestamp, size_t size);
  * @param err    : Error code
  */
 void synx_util_log_error(u32 id, s32 h_synx, s32 err);
-
-/**
- * @brief: Function to initialize the hash tables
- *
- * Initialize the global key and camera id hash table.
- *
- * @return Status of operation. Negative in case of error. Zero otherwise.
- */
-int synx_util_init_table(void);
-
-/**
- * @brief: Function to save data in hash table
- *
- * @param key  : Unique key for the entry
- * @param tbl  : Hash table to add the entry in
- * @param data : Data to be saved
- *
- * @return Status of operation. Negative in case of error. Zero otherwise.
- */
-int synx_util_save_data(u32 key, u32 tbl, void *data);
-
-/**
- * @brief: Function to retrieve data from hash table
- *
- * @param key : Unique key to look up
- * @param tbl : Hash table to look in
- *
- * @return Hash entry if the key is present in the table. NULL otherwise.
- * The hash entry refcount should be released by the client explicitly.
- */
-struct hash_key_data *synx_util_retrieve_data(u32 key, u32 tbl);
-
-/**
- * @brief: Function to release data from hash table
- *
- * @param key : Unique key to look up
- * @param tbl : Hash table to look in
- *
- * @return Hash entry if the key is present in the table. NULL otherwise.
- * the entry is also removed from the hash table by this function.
- * The hash entry refcount should be released by the client explicitly.
- */
-struct hash_key_data *synx_util_release_data(u32 key, u32 tbl);
-
-/**
- * @brief: Function to free hash data entry
- */
-void synx_util_destroy_data(struct kref *kref);
 
 #endif /* __SYNX_UTIL_H__ */

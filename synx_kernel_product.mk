@@ -7,13 +7,10 @@ else
 TARGET_SYNX_ENABLE := true
 endif
 
-TARGET_SYNX_ENABLE := false
 ifeq ($(TARGET_SYNX_ENABLE), true)
-PRODUCT_PACKAGES += synx-driver.ko
-ifeq ($(CONFIG_MSM_GLOBAL_SYNX_V2),true)
-PRODUCT_PACKAGES += ipclite.ko
+ifeq ($(TARGET_BOARD_PLATFORM), gen5)
+PRODUCT_PACKAGES += synx-stub.ko
 else
-PRODUCT_PACKAGES += ipclite.ko
-PRODUCT_PACKAGES += qcom_ipc_lite.ko
+PRODUCT_PACKAGES += synx-driver.ko
 endif
 endif

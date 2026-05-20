@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022, 2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #define pr_fmt(fmt) "synx: " fmt
 
@@ -16,7 +16,6 @@
 #include "synx_api.h"
 #include "synx_util.h"
 #include "synx_debugfs.h"
-#include "qcom_ipc_lite.h"
 
 struct synx_device *synx_dev;
 
@@ -27,7 +26,6 @@ void synx_external_callback(s32 sync_obj, int status, void *data)
 	struct synx_coredata *synx_obj;
 	struct synx_client *client = NULL;
 	struct synx_external_data *bind_data = data;
-	struct hash_key_data *entry = NULL;
 
 	if (!bind_data) {
 		pr_err("invalid payload from sync external obj %d\n",
@@ -45,28 +43,16 @@ void synx_external_callback(s32 sync_obj, int status, void *data)
 	synx_data = synx_util_acquire_handle(client, bind_data->h_synx);
 	synx_obj = synx_util_obtain_object(synx_data);
 	if (!synx_obj || !synx_obj->fence) {
-		pr_info("[sess: %u] invalid cb ext_id %d h_synx %d status %d\n",
-			client->id, sync_obj, bind_data->h_synx, status);
-		entry = synx_util_retrieve_data(sync_obj,
-							SYNX_CAMERA_ID_TBL);
-		if (entry) {
-			pr_info("[sess: %u] ext_id %d h_synx %d found in tbl\n",
-				client->id, sync_obj, bind_data->h_synx);
-			synx_obj = (struct synx_coredata *)entry->data;
-			if (!synx_obj)
-				goto put_cam_tbl_entry;
-		} else {
-			pr_info("[sess: %u] ext_id %d h_synx %d missing in tbl\n",
-				client->id, sync_obj, bind_data->h_synx);
-			goto fail;
-		}
+		pr_err("[sess: %u] invalid callback from external obj %d handle %d\n",
+			client->id, sync_obj, bind_data->h_synx);
+		goto fail;
 	}
 
 	pr_debug("[sess: %u] external callback from %d on handle %d\n",
 		client->id, sync_obj, bind_data->h_synx);
 
 	mutex_lock(&synx_obj->obj_lock);
-	rc = synx_signal_fence(synx_obj, status, true);
+	rc = synx_signal_fence(synx_obj, status);
 	if (rc)
 		pr_err("[sess: %u] signaling failed for handle %d with err: %d\n",
 			client->id, bind_data->h_synx, rc);
@@ -74,20 +60,13 @@ void synx_external_callback(s32 sync_obj, int status, void *data)
 		synx_signal_core(synx_obj, status, true, sync_obj);
 	mutex_unlock(&synx_obj->obj_lock);
 
-put_cam_tbl_entry:
-	if (entry) {
-		spin_lock_bh(&camera_tbl_lock);
-		kref_put(&entry->refcount, synx_util_destroy_data);
-		spin_unlock_bh(&camera_tbl_lock);
-	}
-
 fail:
 	synx_util_release_handle(synx_data);
 	synx_put_client(client);
 free:
 	kfree(bind_data);
 }
-EXPORT_SYMBOL_GPL(synx_external_callback);
+EXPORT_SYMBOL(synx_external_callback);
 
 bool synx_fence_enable_signaling(struct dma_fence *fence)
 {
@@ -106,7 +85,7 @@ void synx_fence_release(struct dma_fence *fence)
 	kfree(fence);
 	pr_debug("released synx backing fence %pK\n", fence);
 }
-EXPORT_SYMBOL_GPL(synx_fence_release);
+EXPORT_SYMBOL(synx_fence_release);
 
 static struct dma_fence_ops synx_fence_ops = {
 	.wait = dma_fence_default_wait,
@@ -152,7 +131,7 @@ fail:
 		session_id.client_id, current->pid);
 	return fence;
 }
-EXPORT_SYMBOL_GPL(synx_get_fence);
+EXPORT_SYMBOL(synx_get_fence);
 
 int synx_create(struct synx_session session_id,
 	struct synx_create_params *params)
@@ -213,7 +192,7 @@ fail:
 	synx_put_client(client);
 	return rc;
 }
-EXPORT_SYMBOL_GPL(synx_create);
+EXPORT_SYMBOL(synx_create);
 
 int synx_signal_core(struct synx_coredata *synx_obj,
 	u32 status,
@@ -228,7 +207,6 @@ int synx_signal_core(struct synx_coredata *synx_obj,
 	struct synx_external_data *data = NULL;
 	struct synx_bind_desc bind_descs[SYNX_MAX_NUM_BINDINGS];
 	struct bind_operations *bind_ops = NULL;
-	struct hash_key_data *entry = NULL;
 
 	if (!synx_obj)
 		return -EINVAL;
@@ -249,19 +227,8 @@ int synx_signal_core(struct synx_coredata *synx_obj,
 				synx_obj->bound_synxs[i].external_desc.id[0])) {
 				pr_debug("skipping signaling inbound sync: %d\n",
 					ext_sync_id);
-				type = synx_obj->bound_synxs[i].external_desc.type;
 				memset(&synx_obj->bound_synxs[i], 0,
 					sizeof(struct synx_bind_desc));
-				/* clear the hash table entry */
-				entry = synx_util_release_data(ext_sync_id, type);
-				if (entry && type == SYNX_TYPE_CSL) {
-					spin_lock_bh(&camera_tbl_lock);
-					kref_put(&entry->refcount, synx_util_destroy_data);
-					spin_unlock_bh(&camera_tbl_lock);
-				} else {
-					pr_err("missing hash entry for %d in cb\n",
-						ext_sync_id);
-				}
 				continue;
 			}
 			memcpy(&bind_descs[idx++],
@@ -284,17 +251,6 @@ int synx_signal_core(struct synx_coredata *synx_obj,
 			kfree(data);
 			continue;
 		}
-
-		/* clear the hash table entry */
-		entry = synx_util_release_data(sync_id, type);
-		if (entry && type == SYNX_TYPE_CSL) {
-			spin_lock_bh(&camera_tbl_lock);
-			kref_put(&entry->refcount, synx_util_destroy_data);
-			spin_unlock_bh(&camera_tbl_lock);
-		} else {
-			pr_err("missing hash entry for id %d\n", sync_id);
-		}
-
 		/*
 		 * we are already signaled, so don't want to
 		 * recursively be signaled
@@ -330,41 +286,8 @@ int synx_signal_core(struct synx_coredata *synx_obj,
 	return rc;
 }
 
-/* signal the external core */
-static void synx_ipc_signal(struct work_struct *cb_dispatch)
-{
-	struct synx_ipc_cb *ipc_cb =
-		container_of(cb_dispatch, struct synx_ipc_cb, cb_dispatch);
-	uint64_t data = 0;
-
-	data = ipc_cb->msg.global_key;
-	data <<= 32;
-	data |= ipc_cb->msg.status;
-
-	pr_debug("invoking ipc signal key %u, status %u, data %llu\n",
-		ipc_cb->msg.global_key, ipc_cb->msg.status, data);
-
-	if (ipc_lite_msg_send(IPCC_CLIENT_CDSP, data, 1))
-		pr_err("synx ipc signaling %u failed\n",
-			ipc_cb->msg.global_key);
-
-	kfree(ipc_cb);
-}
-
-/* function can be called from atomic context */
 static int synx_signal_global(struct synx_coredata *synx_obj)
 {
-	struct synx_ipc_cb *ipc_cb;
-
-	ipc_cb = kzalloc(sizeof(*ipc_cb), GFP_ATOMIC);
-	if (!ipc_cb)
-		return -ENOMEM;
-
-	ipc_cb->msg.global_key = synx_obj->global_key;
-	ipc_cb->msg.status = synx_util_get_object_status_locked(synx_obj);
-
-	INIT_WORK(&ipc_cb->cb_dispatch, synx_ipc_signal);
-	queue_work(synx_dev->work_queue, &ipc_cb->cb_dispatch);
 	return 0;
 }
 
@@ -374,13 +297,12 @@ void synx_fence_callback(struct dma_fence *fence,
 	struct synx_coredata *synx_obj =
 		container_of(cb, struct synx_coredata, fence_cb);
 
-	if (synx_util_is_global_object(synx_obj))
-		synx_signal_global(synx_obj);
+	synx_signal_global(synx_obj);
 }
-EXPORT_SYMBOL_GPL(synx_fence_callback);
+EXPORT_SYMBOL(synx_fence_callback);
 
 int synx_signal_fence(struct synx_coredata *synx_obj,
-	u32 status, bool internal)
+	u32 status)
 {
 	int rc = 0;
 	unsigned long flags;
@@ -388,7 +310,7 @@ int synx_signal_fence(struct synx_coredata *synx_obj,
 	if (!synx_obj || !synx_obj->fence)
 		return -EINVAL;
 
-	if (status <= SYNX_STATE_ACTIVE) {
+	if (status < SYNX_STATE_SIGNALED_SUCCESS) {
 		pr_err("signaling with wrong status = %u\n",
 			status);
 		return -EINVAL;
@@ -414,13 +336,6 @@ int synx_signal_fence(struct synx_coredata *synx_obj,
 	}
 
 	spin_lock_irqsave(synx_obj->fence->lock, flags);
-	/* check the status again acquiring lock to avoid errors */
-	if (synx_util_get_object_status_locked(synx_obj) !=
-		SYNX_STATE_ACTIVE) {
-		spin_unlock_irqrestore(synx_obj->fence->lock, flags);
-		return -EALREADY;
-	}
-
 	/* set fence error to model {signal w/ error} */
 	if (status != SYNX_STATE_SIGNALED_SUCCESS)
 		dma_fence_set_error(synx_obj->fence, -status);
@@ -428,27 +343,7 @@ int synx_signal_fence(struct synx_coredata *synx_obj,
 	rc = dma_fence_signal_locked(synx_obj->fence);
 	if (rc)
 		pr_err("signaling object failed with err: %d\n", rc);
-
-	if (synx_util_is_global_object(synx_obj) && internal)
-		rc = synx_signal_global(synx_obj);
 	spin_unlock_irqrestore(synx_obj->fence->lock, flags);
-
-	return rc;
-}
-
-static int synx_signal_handler(struct synx_coredata *synx_obj,
-	u32 status, bool internal)
-{
-	int rc = 0;
-
-	if (!synx_obj)
-		return -EINVAL;
-
-	mutex_lock(&synx_obj->obj_lock);
-	rc = synx_signal_fence(synx_obj, status, internal);
-	if (!rc)
-		rc = synx_signal_core(synx_obj, status, false, 0);
-	mutex_unlock(&synx_obj->obj_lock);
 
 	return rc;
 }
@@ -476,10 +371,14 @@ int synx_signal(struct synx_session session_id, s32 h_synx, u32 status)
 		goto fail;
 	}
 
-	rc = synx_signal_handler(synx_obj, status, true);
+	mutex_lock(&synx_obj->obj_lock);
+	rc = synx_signal_fence(synx_obj, status);
 	if (rc)
 		pr_err("[sess: %u] signaling failed for handle %d with err: %d\n",
 			client->id, h_synx, rc);
+	else
+		rc = synx_signal_core(synx_obj, status, false, 0);
+	mutex_unlock(&synx_obj->obj_lock);
 
 fail:
 	synx_util_release_handle(synx_data);
@@ -488,7 +387,7 @@ fail:
 		session_id.client_id, rc);
 	return rc;
 }
-EXPORT_SYMBOL_GPL(synx_signal);
+EXPORT_SYMBOL(synx_signal);
 
 static int synx_match_payload(struct synx_kernel_payload *cb_payload,
 	struct synx_kernel_payload *payload)
@@ -595,7 +494,7 @@ fail:
 		session_id.client_id, rc);
 	return rc;
 }
-EXPORT_SYMBOL_GPL(synx_register_callback);
+EXPORT_SYMBOL(synx_register_callback);
 
 int synx_deregister_callback(struct synx_session session_id,
 	s32 h_synx,
@@ -706,7 +605,7 @@ fail:
 		session_id.client_id, rc);
 	return rc;
 }
-EXPORT_SYMBOL_GPL(synx_deregister_callback);
+EXPORT_SYMBOL(synx_deregister_callback);
 
 int synx_merge(struct synx_session session_id,
 	s32 *h_synxs,
@@ -778,7 +677,7 @@ fail:
 	synx_put_client(client);
 	return rc;
 }
-EXPORT_SYMBOL_GPL(synx_merge);
+EXPORT_SYMBOL(synx_merge);
 
 int synx_release(struct synx_session session_id, s32 h_synx)
 {
@@ -825,7 +724,7 @@ int synx_release(struct synx_session session_id, s32 h_synx)
 
 	return rc;
 }
-EXPORT_SYMBOL_GPL(synx_release);
+EXPORT_SYMBOL(synx_release);
 
 int synx_wait(struct synx_session session_id, s32 h_synx, u64 timeout_ms)
 {
@@ -874,7 +773,7 @@ fail:
 		session_id.client_id, rc);
 	return rc;
 }
-EXPORT_SYMBOL_GPL(synx_wait);
+EXPORT_SYMBOL(synx_wait);
 
 int synx_bind(struct synx_session session_id,
 	s32 h_synx,
@@ -884,11 +783,10 @@ int synx_bind(struct synx_session session_id,
 	u32 i;
 	u32 bound_idx;
 	struct synx_client *client;
-	struct synx_handle_coredata *synx_data = NULL;
+	struct synx_handle_coredata *synx_data;
 	struct synx_coredata *synx_obj;
 	struct synx_external_data *data = NULL;
 	struct bind_operations *bind_ops = NULL;
-	struct hash_key_data *entry = NULL;
 
 	pr_debug("[sess: %u] Enter bind from pid %d\n",
 		session_id.client_id, current->pid);
@@ -897,15 +795,12 @@ int synx_bind(struct synx_session session_id,
 	if (!client)
 		return -EINVAL;
 
-	rc = synx_util_update_handle(client, h_synx,
-					external_sync.id[0],
-					external_sync.type,
-					&synx_data);
+	synx_data = synx_util_acquire_handle(client, h_synx);
 	synx_obj = synx_util_obtain_object(synx_data);
 	if (!synx_obj) {
-		if (rc || synx_data)
-			pr_err("%s: [sess: %u] invalid handle access %d\n",
-				__func__, client->id, h_synx);
+		pr_err("%s: [sess: %u] invalid handle access %d\n",
+			__func__, client->id, h_synx);
+		rc = -EINVAL;
 		goto fail;
 	}
 
@@ -968,30 +863,11 @@ int synx_bind(struct synx_session session_id,
 	synx_obj->num_bound_synxs++;
 	mutex_unlock(&synx_obj->obj_lock);
 
-	rc = synx_util_save_data(external_sync.id[0],
-			external_sync.type, (void *)synx_obj);
-	if (!rc) {
-		rc = bind_ops->register_callback(synx_external_callback,
+	rc = bind_ops->register_callback(synx_external_callback,
 			data, external_sync.id[0]);
-		if (rc) {
-			pr_err("[sess: %u] callback registration failed for %d\n",
-				client->id, external_sync.id[0]);
-			entry = synx_util_release_data(external_sync.id[0],
-						external_sync.type);
-			if (entry) {
-				pr_info("[sess: %u] retrieved %u, synx obj %pK\n",
-					client->id, entry->key, entry->data);
-				spin_lock_bh(&camera_tbl_lock);
-				kref_put(&entry->refcount, synx_util_destroy_data);
-				spin_unlock_bh(&camera_tbl_lock);
-			} else {
-				pr_warn("[sess: %u] entry already cleared for %d\n",
-					client->id, external_sync.id[0]);
-			}
-		}
-	}
-
 	if (rc) {
+		pr_err("[sess: %u] callback registration failed for %d\n",
+			client->id, external_sync.id[0]);
 		mutex_lock(&synx_obj->obj_lock);
 		memset(&synx_obj->bound_synxs[bound_idx], 0,
 			sizeof(struct synx_external_desc));
@@ -1015,7 +891,7 @@ fail:
 	synx_put_client(client);
 	return rc;
 }
-EXPORT_SYMBOL_GPL(synx_bind);
+EXPORT_SYMBOL(synx_bind);
 
 int synx_get_status(struct synx_session session_id, s32 h_synx)
 {
@@ -1053,7 +929,7 @@ fail:
 		session_id.client_id, rc);
 	return rc;
 }
-EXPORT_SYMBOL_GPL(synx_get_status);
+EXPORT_SYMBOL(synx_get_status);
 
 int synx_addrefcount(struct synx_session session_id, s32 h_synx, s32 count)
 {
@@ -1102,7 +978,7 @@ fail:
 		session_id.client_id, rc);
 	return rc;
 }
-EXPORT_SYMBOL_GPL(synx_addrefcount);
+EXPORT_SYMBOL(synx_addrefcount);
 
 int synx_import(struct synx_session session_id,
 	struct synx_import_params *params)
@@ -1157,7 +1033,7 @@ fail:
 	synx_put_client(client);
 	return rc;
 }
-EXPORT_SYMBOL_GPL(synx_import);
+EXPORT_SYMBOL(synx_import);
 
 int synx_export(struct synx_session session_id,
 	struct synx_export_params *params)
@@ -1175,10 +1051,7 @@ int synx_export(struct synx_session session_id,
 	if (!client)
 		return -EINVAL;
 
-	if (params->type & SYNX_FLAG_GLOBAL_FENCE)
-		rc = synx_util_export_global(client, params);
-	else
-		rc = synx_util_export_local(client, params);
+	rc = synx_util_export_object(client, params);
 	if (rc)
 		pr_err("[sess: %u] handle export failed %d\n",
 			client->id, params->h_synx);
@@ -1188,7 +1061,7 @@ int synx_export(struct synx_session session_id,
 		session_id.client_id, rc);
 	return rc;
 }
-EXPORT_SYMBOL_GPL(synx_export);
+EXPORT_SYMBOL(synx_export);
 
 static int synx_handle_create(struct synx_private_ioctl_arg *k_ioctl,
 	struct synx_session session_id)
@@ -1287,7 +1160,6 @@ static int synx_handle_export(struct synx_private_ioctl_arg *k_ioctl,
 
 	params.h_synx = id_info.synx_obj;
 	params.secure_key = &id_info.secure_key;
-	params.type = id_info.padding;
 	params.fence = NULL;
 	if (synx_export(session_id, &params))
 		return -EINVAL;
@@ -1400,7 +1272,7 @@ static int synx_handle_register_user_payload(
 		k_ioctl->size))
 		return -EFAULT;
 
-	pr_debug("user cb registration with payload %x\n",
+	pr_debug("user cb registration with payload %llx\n",
 		user_data.payload[0]);
 	rc = synx_register_callback(session_id, user_data.synx_obj,
 		synx_util_default_user_callback, (void *)user_data.payload[0]);
@@ -1611,7 +1483,6 @@ static ssize_t synx_read(struct file *filep,
 
 	list_del_init(&cb->node);
 	mutex_unlock(&client->event_q_lock);
-	memset(&data, 0, sizeof(struct synx_userpayload_info));
 
 	rc = size;
 	data.synx_obj = cb->kernel_cb.h_synx;
@@ -1629,7 +1500,7 @@ static ssize_t synx_read(struct file *filep,
 			__func__, client->id, data.synx_obj);
 fail:
 	synx_put_client(client);
-	pr_debug("[sess: %u] exit with status %d\n",
+	pr_debug("[sess: %u] exit with status %zd\n",
 		session->client_id, rc);
 
 	return rc;
@@ -1668,7 +1539,7 @@ int synx_initialize(struct synx_session *session_id,
 	struct synx_initialization_params *params)
 {
 	u32 i;
-	u8 unique_id;
+	u16 unique_id;
 	long idx;
 	struct synx_client *client;
 	struct synx_client_metadata *client_metadata;
@@ -1720,7 +1591,7 @@ int synx_initialize(struct synx_session *session_id,
 		session_id->client_id, params->name);
 	return 0;
 }
-EXPORT_SYMBOL_GPL(synx_initialize);
+EXPORT_SYMBOL(synx_initialize);
 
 int synx_uninitialize(struct synx_session session_id)
 {
@@ -1739,7 +1610,7 @@ int synx_uninitialize(struct synx_session session_id)
 	synx_put_client(client);
 	return 0;
 }
-EXPORT_SYMBOL_GPL(synx_uninitialize);
+EXPORT_SYMBOL(synx_uninitialize);
 
 static int synx_open(struct inode *inode, struct file *filep)
 {
@@ -1830,7 +1701,7 @@ int synx_register_ops(const struct synx_register_params *params)
 
 	return rc;
 }
-EXPORT_SYMBOL_GPL(synx_register_ops);
+EXPORT_SYMBOL(synx_register_ops);
 
 int synx_deregister_ops(const struct synx_register_params *params)
 {
@@ -1851,55 +1722,7 @@ int synx_deregister_ops(const struct synx_register_params *params)
 
 	return 0;
 }
-EXPORT_SYMBOL_GPL(synx_deregister_ops);
-
-/* signal from external core */
-static void synx_ipc_signal_handler(struct work_struct *cb_dispatch)
-{
-	int rc = 0;
-	struct synx_ipc_cb *ipc_cb =
-		container_of(cb_dispatch, struct synx_ipc_cb, cb_dispatch);
-	struct synx_ipc_msg *msg = &ipc_cb->msg;
-	struct hash_key_data *entry =
-		synx_util_release_data(msg->global_key, SYNX_GLOBAL_KEY_TBL);
-
-	if (entry) {
-		rc = synx_signal_handler((struct synx_coredata *)entry->data,
-			msg->status, false);
-		if (rc)
-			pr_err("ipc signaling failed on key %u err: %d\n",
-				msg->global_key, rc);
-		spin_lock_bh(&global_tbl_lock);
-		kref_put(&entry->refcount, synx_util_destroy_data);
-		spin_unlock_bh(&global_tbl_lock);
-	} else {
-		pr_err("ipc invalid entry for key %u\n",
-			msg->global_key);
-	}
-
-	kfree(ipc_cb);
-}
-
-int synx_ipc_callback(uint32_t client_id,
-	uint64_t data, void *priv)
-{
-	struct synx_ipc_cb *ipc_cb =
-		kzalloc(sizeof(*ipc_cb), GFP_ATOMIC);
-	if (!ipc_cb)
-		return -ENOMEM;
-
-	ipc_cb->msg.status = (u32)data;
-	ipc_cb->msg.global_key =
-		(u32)(data >> 32);
-
-	pr_debug("reverse ipc signal key %u, status %u, data %llu\n",
-		ipc_cb->msg.global_key, ipc_cb->msg.status, data);
-
-	INIT_WORK(&ipc_cb->cb_dispatch, synx_ipc_signal_handler);
-	queue_work(synx_dev->work_queue, &ipc_cb->cb_dispatch);
-	return 0;
-}
-EXPORT_SYMBOL_GPL(synx_ipc_callback);
+EXPORT_SYMBOL(synx_deregister_ops);
 
 static int __init synx_init(void)
 {
@@ -1925,7 +1748,7 @@ static int __init synx_init(void)
 		goto reg_fail;
 	}
 
-	synx_dev->class = class_create(THIS_MODULE, SYNX_DEVICE_NAME);
+	synx_dev->class = class_create(SYNX_DEVICE_NAME);
 	device_create(synx_dev->class, NULL, synx_dev->dev,
 		NULL, SYNX_DEVICE_NAME);
 
@@ -1944,8 +1767,6 @@ static int __init synx_init(void)
 	set_bit(0, synx_dev->bitmap);
 	synx_dev->debugfs_root = synx_init_debugfs_dir(synx_dev);
 
-	ipc_lite_register_client(synx_ipc_callback, NULL);
-	synx_util_init_table();
 	pr_info("synx device initialization success\n");
 
 	return 0;
@@ -1986,4 +1807,4 @@ module_init(synx_init);
 module_exit(synx_exit);
 
 MODULE_DESCRIPTION("Global Synx Driver");
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("GPL v2");
