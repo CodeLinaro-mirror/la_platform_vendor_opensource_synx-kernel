@@ -387,6 +387,7 @@ static int synx_handle_import_arr(
 		params.type = SYNX_IMPORT_INDV_PARAMS;
 		params.indv.new_h_synx = &arr[idx].new_synx_obj;
 		params.indv.flags = arr[idx].flags;
+		params.indv.fence = NULL;
 
 		if (arr[idx].flags & SYNX_IMPORT_DMA_FENCE) {
 			if (arr[idx].desc.id[0] == 0) {
@@ -477,6 +478,7 @@ static int synx_handle_import_arr_v2(
 		params.indv_v2.security_key_lo = arr_v2[idx].security_key_lo;
 		params.indv_v2.client_data_hi = arr_v2[idx].client_data_hi;
 		params.indv_v2.client_data_lo = arr_v2[idx].client_data_lo;
+		params.indv_v2.fence = NULL;
 
 		if (arr_v2[idx].flags & SYNX_IMPORT_DMA_FENCE) {
 			if (arr_v2[idx].desc.id[0] == 0) {
@@ -1173,6 +1175,67 @@ static int synx_handle_recover(struct synx_private_ioctl_arg *k_ioctl, struct sy
 }
 #endif /* CONFIG_DEBUG_FS */
 
+static int synx_handle_get_sys_info(struct synx_private_ioctl_arg *k_ioctl)
+{
+	int result;
+	struct synx_get_sys_info info;
+	struct synx_get_sys_info_params params = {0};
+	u32 *caps = NULL;
+
+	if (k_ioctl->size != sizeof(info))
+		return -SYNX_INVALID;
+
+	if (copy_from_user(&info,
+			u64_to_user_ptr(k_ioctl->ioctl_ptr),
+			k_ioctl->size))
+		return -EFAULT;
+
+	if (info.type != SYNX_GET_CAPABILITY) {
+		dprintk(SYNX_ERR, "unsupported sys info type: %u\n", info.type);
+		return -SYNX_INVALID;
+	}
+
+	if (info.type == SYNX_GET_CAPABILITY) {
+		if (!info.num_dwords || !info.caps) {
+			dprintk(SYNX_ERR, "invalid num_dwords or caps pointer\n");
+			return -SYNX_INVALID;
+		}
+
+		if (info.num_dwords != SYNX_CAPABILITY_DWORDS) {
+			dprintk(SYNX_WARN, "num_dwords %u != SYNX_CAPABILITY_DWORDS %u\n",
+			(u32)info.num_dwords, SYNX_CAPABILITY_DWORDS);
+		}
+
+			caps = kcalloc((u32)info.num_dwords, sizeof(u32), GFP_KERNEL);
+			if (IS_ERR_OR_NULL(caps))
+				return -ENOMEM;
+
+			params.type = SYNX_GET_CAPABILITY;
+			params.num_dwords = info.num_dwords;
+			params.caps = caps;
+	}
+
+	result = synx_get_sys_info((enum synx_client_type)info.client_type, &params);
+
+	if (result) {
+		dprintk(SYNX_ERR, "failed to get sys_info: %d\n", result);
+		goto out;
+	}
+
+	if (info.type == SYNX_GET_CAPABILITY) {
+		if (copy_to_user(u64_to_user_ptr(info.caps),
+				caps,
+				(u32)info.num_dwords * sizeof(u32))) {
+			result = -EFAULT;
+			goto out;
+		}
+	}
+
+out:
+	kfree(caps);
+	return result;
+}
+
 long synx_ioctl(struct file *filep,
 	unsigned int cmd,
 	unsigned long arg)
@@ -1196,7 +1259,8 @@ long synx_ioctl(struct file *filep,
 	if (!k_ioctl.ioctl_ptr)
 		return -SYNX_INVALID;
 
-	if (IS_ERR_OR_NULL(session) && k_ioctl.id != SYNX_INITIALIZE) {
+	if (IS_ERR_OR_NULL(session) && k_ioctl.id != SYNX_INITIALIZE &&
+			k_ioctl.id != SYNX_GET_SYS_INFO) {
 		dprintk(SYNX_ERR, "session is not initialized\n");
 		return -SYNX_INVALID;
 	}
@@ -1285,6 +1349,9 @@ long synx_ioctl(struct file *filep,
 		break;
 	case SYNX_GETFENCE_FD:
 		rc = synx_handle_get_fence(&k_ioctl, session);
+		break;
+	case SYNX_GET_SYS_INFO:
+		rc = synx_handle_get_sys_info(&k_ioctl);
 		break;
 #if IS_ENABLED(CONFIG_DEBUG_FS)
 	case SYNX_RECOVER:
