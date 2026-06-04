@@ -25,6 +25,7 @@ static const struct file_operations synx_fops = {
 	.read  = synx_read,
 	.release = synx_close,
 	.poll  = synx_poll,
+	.write = synx_write,
 	.unlocked_ioctl = synx_ioctl,
 #ifdef CONFIG_COMPAT
 	.compat_ioctl = synx_ioctl,
