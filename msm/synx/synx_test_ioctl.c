@@ -352,13 +352,13 @@ void synx_dma_fence_callback(struct dma_fence *fence,
 {
 	s32 status;
 
-	dprintk(SYNX_DBG,
+	dprintk(SYNX_VERB,
 		"callback called for fence %pK for cb %pK\n",
 		fence, cb);
 
 	status = dma_fence_get_status_locked(fence);
 
-	dprintk(SYNX_DBG,
+	dprintk(SYNX_VERB,
 		"status %d of dma fence %pK\n",
 		status, fence);
 
@@ -406,7 +406,7 @@ static struct dma_fence *synx_dma_fence_util_init(u64 context)
 			fence_cb, synx_dma_fence_callback);
 	if (rc != 0) {
 		if (rc == -ENOENT) {
-			dprintk(SYNX_DBG, "dma fence %pK is already signaled\n", fence);
+			dprintk(SYNX_VERB, "dma fence %pK is already signaled\n", fence);
 		} else {
 			dprintk(SYNX_ERR, "Error adding callback for dma fence %pK err%d\n",
 				fence, rc);
@@ -418,7 +418,7 @@ static struct dma_fence *synx_dma_fence_util_init(u64 context)
 		return ERR_PTR(rc);
 	}
 
-	dprintk(SYNX_DBG, "Allocated new dma fence %pK fence_cb %pK\n", fence, fence_cb);
+	dprintk(SYNX_VERB, "Allocated new dma fence %pK fence_cb %pK\n", fence, fence_cb);
 	return fence;
 }
 
@@ -528,7 +528,7 @@ static int synx_dma_array_fence_create(struct synx_dma_array_create_params *para
 
 	if (rc != 0) {
 		if (rc == -ENOENT) {
-			dprintk(SYNX_DBG, "dma fence %pK is already signaled\n", fence);
+			dprintk(SYNX_VERB, "dma fence %pK is already signaled\n", fence);
 		} else {
 			dprintk(SYNX_ERR, "Error adding callback for dma fence %pK err%d\n",
 				fence, rc);
@@ -540,7 +540,7 @@ static int synx_dma_array_fence_create(struct synx_dma_array_create_params *para
 		return rc;
 	}
 
-	dprintk(SYNX_DBG, "Allocated new dma fence array %pK fence_cb %pK\n", fence, fence_cb);
+	dprintk(SYNX_VERB, "Allocated new dma fence array %pK fence_cb %pK\n", fence, fence_cb);
 	return rc;
 bail:
 	// Cleanup references
@@ -614,7 +614,7 @@ static int synx_handle_dma_create(
 		dma_create_info.indv.dma_fd =
 			synx_test_create_sync_fd((struct dma_fence *)params.indv.dma_fence);
 
-		dprintk(SYNX_DBG, "create new file fd %d for dma_fence %pK result %d\n",
+		dprintk(SYNX_VERB, "create new file fd %d for dma_fence %pK result %d\n",
 			dma_create_info.indv.dma_fd,
 			(struct dma_fence *)params.indv.dma_fence, result);
 
@@ -626,7 +626,7 @@ static int synx_handle_dma_create(
 				synx_test_create_sync_fd(
 					(struct dma_fence *)params.arr.list[i].dma_fence);
 
-			dprintk(SYNX_DBG, "create new file fd %d for dma_fence %pK\n",
+			dprintk(SYNX_VERB, "create new file fd %d for dma_fence %pK\n",
 				dma_list[i].dma_fd,
 				(struct dma_fence *)params.arr.list[i].dma_fence);
 
@@ -710,12 +710,12 @@ static int synx_handle_dma_array_create(
 			sync_file_get_fence(child_dma_fds[i]);
 
 		if (IS_ERR_OR_NULL(child_dma_fence_list[i])) {
-			dprintk(SYNX_DBG, "Dma_fd %d is not valid\n",
+			dprintk(SYNX_VERB, "Dma_fd %d is not valid\n",
 					child_dma_fds[i]);
 			result = -SYNX_INVALID;
 			goto bail;
 		}
-		dprintk(SYNX_DBG, "got dma_fence %pK from fd %d\n",
+		dprintk(SYNX_VERB, "got dma_fence %pK from fd %d\n",
 			child_dma_fence_list[i], child_dma_fds[i]);
 	}
 
@@ -732,7 +732,7 @@ static int synx_handle_dma_array_create(
 	dma_array_info.dma_array_fd =
 		synx_test_create_sync_fd((struct dma_fence *)params.dma_array_fence);
 
-	dprintk(SYNX_DBG, "create new file fd %d for dma_array_fence %pK\n",
+	dprintk(SYNX_VERB, "create new file fd %d for dma_array_fence %pK\n",
 		dma_array_info.dma_array_fd,
 		(struct dma_fence *)params.dma_array_fence);
 
@@ -789,7 +789,7 @@ static int synx_handle_dma_signal(
 			return -SYNX_INVALID;
 		}
 
-		dprintk(SYNX_DBG, "Signaling dma_fence %pK dma_fd %d\n",
+		dprintk(SYNX_VERB, "Signaling dma_fence %pK dma_fd %d\n",
 			(struct dma_fence *)params.indv.dma_fence,
 			dma_signal_info.indv.dma_fd);
 

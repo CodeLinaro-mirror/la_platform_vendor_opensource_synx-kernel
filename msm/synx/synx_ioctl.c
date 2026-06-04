@@ -612,7 +612,7 @@ static int synx_handle_signal_n(struct synx_private_ioctl_arg *k_ioctl,
 			dprintk(SYNX_ERR, "synx_signal_n batch failed %d\n", rc);
 
 		for (idx = 0; idx < params.arr.num_fences; idx++) {
-			dprintk(SYNX_DBG, "h_synx: 0x%x signaled\n",
+			dprintk(SYNX_VERB, "h_synx: 0x%x signaled\n",
 				params.arr.list[idx].h_synx);
 		}
 
@@ -637,7 +637,7 @@ static int synx_handle_signal_n(struct synx_private_ioctl_arg *k_ioctl,
 		if (rc != SYNX_SUCCESS) {
 			dprintk(SYNX_ERR, "synx_signal_n failed %d", rc);
 		} else {
-			dprintk(SYNX_DBG, "synx_signal_n successful\n");
+			dprintk(SYNX_VERB, "synx_signal_n successful\n");
 			if (copy_to_user(u64_to_user_ptr(k_ioctl->ioctl_ptr),
 					&signal_info,
 					k_ioctl->size))
@@ -863,7 +863,7 @@ static int synx_handle_async_wait_n(
 					params.arr.list[idx].h_synx, params.arr.list[idx].result);
 			}
 		} else
-			dprintk(SYNX_DBG, "user cb batch registration successful\n");
+			dprintk(SYNX_VERB, "user cb batch registration successful\n");
 
 		if (copy_to_user(u64_to_user_ptr(user_data.arr.list),
 			arr_params,
@@ -885,7 +885,7 @@ static int synx_handle_async_wait_n(
 		if (rc)
 			dprintk(SYNX_ERR, "user cb indv registration failed\n");
 		else
-			dprintk(SYNX_DBG, "user cb indv registration successful\n");
+			dprintk(SYNX_VERB, "user cb indv registration successful\n");
 	}
 
 	return rc;
@@ -974,7 +974,7 @@ static int synx_handle_cancel_async_wait_n(
 					params.arr.list[idx].h_synx, params.arr.list[idx].result);
 			}
 		} else
-			dprintk(SYNX_DBG, "user cb batch deregistration successful\n");
+			dprintk(SYNX_VERB, "user cb batch deregistration successful\n");
 
 		if (copy_to_user(u64_to_user_ptr(user_data.arr.list),
 			arr_params,
@@ -993,7 +993,7 @@ static int synx_handle_cancel_async_wait_n(
 		if (rc)
 			dprintk(SYNX_ERR, "user cb indv deregistration failed\n");
 		else
-			dprintk(SYNX_DBG, "user cb indv deregistration successful\n");
+			dprintk(SYNX_VERB, "user cb indv deregistration successful\n");
 	}
 
 	return rc;
@@ -1020,7 +1020,7 @@ static int synx_handle_poll_read(struct synx_private_ioctl_arg *k_ioctl,
 			return -EFAULT;
 		}
 	} else if (k_ioctl->result == SYNX_EVENT_CLOSE)
-		dprintk(SYNX_DBG, "Session close event received\n");
+		dprintk(SYNX_VERB, "Session close event received\n");
 
 	return k_ioctl->result;
 }
@@ -1115,7 +1115,7 @@ static int synx_handle_release_n(struct synx_private_ioctl_arg *k_ioctl,
 
 		for (idx = 0; idx < params.arr.num_objs; idx++) {
 			arr[idx].status = params.arr.list[idx].result;
-			dprintk(SYNX_DBG, "h_synx: 0x%x Release status: %d\n",
+			dprintk(SYNX_VERB, "h_synx: 0x%x Release status: %d\n",
 				params.arr.list[idx].h_synx, params.arr.list[idx].result);
 		}
 
