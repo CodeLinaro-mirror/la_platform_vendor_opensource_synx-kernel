@@ -553,7 +553,20 @@ void synx_util_object_destroy(struct synx_coredata *synx_obj)
 		kfree(data);
 	}
 
-	if (dma_fence_is_array(synx_obj->fence)) {
+	/*
+	 * Release the extra child map_entry references that were acquired
+	 * during merge creation (synx_util_populate_map_entries). Only
+	 * objects created by the SYNX_MERGE / SYNX_MERGE_N path have
+	 * SYNX_CREATE_MERGED_FENCE set in their type and own those extra
+	 * references. Objects created by SYNX_IMPORT wrapping an already-
+	 * signaled dma_fence_array never take those extra references, so
+	 * releasing them here would cause a double-put and potential UAF in
+	 * synx_util_release_map_entry(). Guard this block with
+	 * synx_util_is_merged_object() to ensure we only release references
+	 * that were actually acquired.
+	 */
+	if (synx_util_is_merged_object(synx_obj) &&
+		dma_fence_is_array(synx_obj->fence)) {
 		array = to_dma_fence_array(synx_obj->fence);
 		if (!IS_ERR_OR_NULL(array)) {
 			for (i = 0; i < array->num_fences; i++) {
