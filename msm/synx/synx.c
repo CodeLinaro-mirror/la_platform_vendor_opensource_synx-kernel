@@ -2895,8 +2895,8 @@ struct synx_session *synx_internal_initialize(
 	spin_unlock_bh(&synx_dev->native->metadata_map_lock);
 
 	if (__ratelimit(&synx_ratelimit_state))
-		dprintk(SYNX_INFO, "[sess :%llu] session created %s\n",
-			client->id, params->name);
+		dprintk(SYNX_INFO, "[sess :%llu] session created %s, addr %pK\n",
+			client->id, params->name, client);
 
 	return (struct synx_session *)client;
 }
@@ -3040,7 +3040,9 @@ int synx_ipc_callback(u32 client_id,
 
 	signal_cb = kzalloc(sizeof(*signal_cb), GFP_ATOMIC);
 	if (IS_ERR_OR_NULL(signal_cb)) {
-		dprintk(SYNX_ERR, "signal_cb allocation failed\n");
+		dprintk(SYNX_ERR,
+			"signal_cb allocation failed for handle %u, status %u, client_id %u\n",
+			handle, status, client_id);
 		return -SYNX_NOMEM;
 	}
 
