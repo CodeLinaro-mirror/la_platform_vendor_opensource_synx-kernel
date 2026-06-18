@@ -718,7 +718,7 @@ int synx_alloc_local_handle(u32 *new_synx)
 
 int synx_util_init_handle(struct synx_client *client,
 	struct synx_coredata *synx_obj, u32 *new_h_synx,
-	void *map_entry)
+	void *map_entry, bool may_sleep)
 {
 	int rc = SYNX_SUCCESS;
 	bool found = false;
@@ -728,7 +728,7 @@ int synx_util_init_handle(struct synx_client *client,
 		IS_ERR_OR_NULL(new_h_synx) || IS_ERR_OR_NULL(map_entry))
 		return -SYNX_INVALID;
 
-	synx_data = kzalloc(sizeof(*synx_data), GFP_ATOMIC);
+	synx_data = kzalloc(sizeof(*synx_data), may_sleep ? GFP_KERNEL : GFP_ATOMIC);
 	if (IS_ERR_OR_NULL(synx_data)) {
 		dprintk(SYNX_ERR, "synx data allocation failed\n");
 		return -SYNX_NOMEM;
