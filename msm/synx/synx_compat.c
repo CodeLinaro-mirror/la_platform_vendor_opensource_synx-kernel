@@ -349,7 +349,7 @@ int synx_get_sys_info(enum synx_client_type type, struct synx_get_sys_info_param
 
 		if (!ret) {
 			for (i = 0; i < num_dwords; i++)
-				dprintk(SYNX_DBG, "synx capability: caps[%u]=0x%08x\n",
+				dprintk(SYNX_VERB, "synx capability: caps[%u]=0x%08x\n",
 					i, params->caps[i]);
 		}
 	}

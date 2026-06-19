@@ -1205,6 +1205,8 @@ int synx_create(struct synx_session *session, struct synx_create_params *params)
  *
  * Clients can register maximum of 64 callbacks functions per
  * synx session. Clients should register callback functions with minimal computation.
+ * Clients are advised to set a timeout when registering callbacks to handle
+ * potential delays in signal from producer.
  *
  * @param session : Session ptr (returned from synx_initialize)
  * @param params  : Callback params.
@@ -1221,7 +1223,8 @@ int synx_async_wait(struct synx_session *session, struct synx_callback_params *p
  * Clients should register callback functions with minimal computation.
  * This API will continue to register callback for rest of the requests, even if some of the
  * registration fails in array of callback list. The status of individual registration failure
- * can be seen in result member of synx_callback_indv_params.
+ * can be seen in result member of synx_callback_indv_params. Clients are advised to set a
+ * timeout when registering callbacks to handle potential delays in signal from producer.
  *
  * @param session : Session ptr (returned from synx_initialize)
  * @param params  : Callback params.
