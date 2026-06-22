@@ -10,6 +10,7 @@
 #include <linux/printk.h>
 #include <linux/string.h>
 #include <linux/stdarg.h>
+#include <linux/version.h>
 #include "synx_internal.h"
 
 /* Debug level definitions */
@@ -35,10 +36,16 @@ enum synx_debug_level {
 
 #define SYNX_DBG_TAG SYNX_DBG_LABEL ": %4s: "
 
+#if (KERNEL_VERSION(7, 0, 0) <= LINUX_VERSION_CODE)
+#define __synx_trace_puts(ip, buf) __trace_puts(ip, buf)
+#else
+#define __synx_trace_puts(ip, buf) __trace_puts(ip, buf, strlen(buf))
+#endif
+
 #define synx_ftrace_print(prefix, fmt, ...) do {                              \
 	char _sfp_buf[512];                                                       \
 	snprintf(_sfp_buf, sizeof(_sfp_buf), "%s: " fmt, prefix, ##__VA_ARGS__); \
-	__trace_puts(_THIS_IP_, _sfp_buf, strlen(_sfp_buf));                      \
+	__synx_trace_puts(_THIS_IP_, _sfp_buf);                                   \
 } while (0)
 
 extern int synx_debug;
@@ -78,7 +85,7 @@ static noinline __maybe_unused void tracing_mark_write(const char *fmt, ...)
 	va_start(args, fmt);
 	vsnprintf(buf, sizeof(buf), fmt, args);
 	va_end(args);
-	__trace_puts(_THIS_IP_, buf, strlen(buf));
+	__synx_trace_puts(_THIS_IP_, buf);
 }
 
 #define dprintk(__level, __fmt, arg...)                                  \
