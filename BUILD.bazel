@@ -54,3 +54,8 @@ define_art("art16k")
 load(":autogvm.bzl", "define_autogvm")
 
 define_autogvm()
+
+load(":honu.bzl", "define_honu")
+
+define_honu("honu")
+define_honu("honu16k")
