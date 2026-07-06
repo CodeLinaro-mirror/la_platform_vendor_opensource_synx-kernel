@@ -612,7 +612,7 @@ static int synx_handle_signal_n(struct synx_private_ioctl_arg *k_ioctl,
 			dprintk(SYNX_ERR, "synx_signal_n batch failed %d\n", rc);
 
 		for (idx = 0; idx < params.arr.num_fences; idx++) {
-			dprintk(SYNX_DBG, "Handle: %u signaled\n",
+			dprintk(SYNX_VERB, "h_synx: 0x%x signaled\n",
 				params.arr.list[idx].h_synx);
 		}
 
@@ -637,7 +637,7 @@ static int synx_handle_signal_n(struct synx_private_ioctl_arg *k_ioctl,
 		if (rc != SYNX_SUCCESS) {
 			dprintk(SYNX_ERR, "synx_signal_n failed %d", rc);
 		} else {
-			dprintk(SYNX_DBG, "synx_signal_n successful\n");
+			dprintk(SYNX_VERB, "synx_signal_n successful\n");
 			if (copy_to_user(u64_to_user_ptr(k_ioctl->ioctl_ptr),
 					&signal_info,
 					k_ioctl->size))
@@ -802,7 +802,7 @@ static int synx_handle_async_wait(
 	rc = synx_async_wait(session, &params);
 	if (rc)
 		dprintk(SYNX_ERR,
-			"user cb registration failed for handle %d\n",
+			"user cb registration failed for h_synx 0x%x\n",
 			user_data.synx_obj);
 
 	return rc;
@@ -859,11 +859,11 @@ static int synx_handle_async_wait_n(
 			dprintk(SYNX_ERR, "user cb batch registration failed\n");
 			for (idx = 0; idx < params.arr.num_fences; idx++) {
 				arr_params[idx].result = params.arr.list[idx].result;
-				dprintk(SYNX_ERR, "Handle: %u async wait result: %d\n",
+				dprintk(SYNX_ERR, "h_synx: 0x%x async wait result: %d\n",
 					params.arr.list[idx].h_synx, params.arr.list[idx].result);
 			}
 		} else
-			dprintk(SYNX_DBG, "user cb batch registration successful\n");
+			dprintk(SYNX_VERB, "user cb batch registration successful\n");
 
 		if (copy_to_user(u64_to_user_ptr(user_data.arr.list),
 			arr_params,
@@ -885,7 +885,7 @@ static int synx_handle_async_wait_n(
 		if (rc)
 			dprintk(SYNX_ERR, "user cb indv registration failed\n");
 		else
-			dprintk(SYNX_DBG, "user cb indv registration successful\n");
+			dprintk(SYNX_VERB, "user cb indv registration successful\n");
 	}
 
 	return rc;
@@ -914,7 +914,7 @@ static int synx_handle_cancel_async_wait(
 	rc = synx_cancel_async_wait(session, &params);
 	if (rc)
 		dprintk(SYNX_ERR,
-			"user cb deregistration failed for handle %d\n",
+			"user cb deregistration failed for h_synx 0x%x\n",
 			user_data.synx_obj);
 
 	return rc;
@@ -970,11 +970,11 @@ static int synx_handle_cancel_async_wait_n(
 			dprintk(SYNX_ERR, "user cb batch deregistration failed\n");
 			for (idx = 0; idx < params.arr.num_fences; idx++) {
 				arr_params[idx].result = params.arr.list[idx].result;
-				dprintk(SYNX_ERR, "Handle: %u cancel async wait result: %d\n",
+				dprintk(SYNX_ERR, "h_synx: 0x%x cancel async wait result: %d\n",
 					params.arr.list[idx].h_synx, params.arr.list[idx].result);
 			}
 		} else
-			dprintk(SYNX_DBG, "user cb batch deregistration successful\n");
+			dprintk(SYNX_VERB, "user cb batch deregistration successful\n");
 
 		if (copy_to_user(u64_to_user_ptr(user_data.arr.list),
 			arr_params,
@@ -993,10 +993,36 @@ static int synx_handle_cancel_async_wait_n(
 		if (rc)
 			dprintk(SYNX_ERR, "user cb indv deregistration failed\n");
 		else
-			dprintk(SYNX_DBG, "user cb indv deregistration successful\n");
+			dprintk(SYNX_VERB, "user cb indv deregistration successful\n");
 	}
 
 	return rc;
+}
+
+static int synx_handle_poll_read(struct synx_private_ioctl_arg *k_ioctl,
+	struct synx_session *session)
+{
+	struct synx_userpayload_indv_info info = {0};
+
+	if (k_ioctl->size != sizeof(struct synx_userpayload_indv_info) &&
+		k_ioctl->size != sizeof(struct synx_userpayload_info_v2)) {
+		dprintk(SYNX_ERR, "invalid read size\n");
+		return -SYNX_INVALID;
+	}
+
+	k_ioctl->result = synx_internal_poll_read(session, &info);
+
+	if (k_ioctl->result == SYNX_EVENT_READ) {
+		if (copy_to_user(u64_to_user_ptr(k_ioctl->ioctl_ptr),
+				&info,
+				k_ioctl->size)) {
+			dprintk(SYNX_ERR, "couldn't copy user callback data\n");
+			return -EFAULT;
+		}
+	} else if (k_ioctl->result == SYNX_EVENT_CLOSE)
+		dprintk(SYNX_VERB, "Session close event received\n");
+
+	return k_ioctl->result;
 }
 
 static int synx_handle_bind(struct synx_private_ioctl_arg *k_ioctl,
@@ -1089,7 +1115,7 @@ static int synx_handle_release_n(struct synx_private_ioctl_arg *k_ioctl,
 
 		for (idx = 0; idx < params.arr.num_objs; idx++) {
 			arr[idx].status = params.arr.list[idx].result;
-			dprintk(SYNX_DBG, "Handle: %u Release status: %d\n",
+			dprintk(SYNX_VERB, "h_synx: 0x%x Release status: %d\n",
 				params.arr.list[idx].h_synx, params.arr.list[idx].result);
 		}
 
@@ -1110,11 +1136,11 @@ static int synx_handle_release_n(struct synx_private_ioctl_arg *k_ioctl,
 		result = synx_release_n(session, &params);
 		if (result != SYNX_SUCCESS) {
 			dprintk(SYNX_ERR,
-				"synx_release_n failed %d for indv handle %u",
+				"synx_release_n failed %d for indv h_synx 0x%x",
 				result, params.indv.h_synx);
 		} else {
 			dprintk(SYNX_VERB,
-				"synx_release_n success for indv handle %u",
+				"synx_release_n success for indv h_synx 0x%x",
 				params.indv.h_synx);
 		}
 	} else {
@@ -1236,22 +1262,52 @@ out:
 	return result;
 }
 
-long synx_ioctl(struct file *filep,
-	unsigned int cmd,
-	unsigned long arg)
+typedef int (*synx_ioctl_handler)(struct synx_private_ioctl_arg *,
+				  struct synx_session *);
+
+static const synx_ioctl_handler synx_table[] = {
+	[SYNX_CREATE]               = synx_handle_create,
+	[SYNX_RELEASE]              = synx_handle_release,
+	[SYNX_SIGNAL]               = synx_handle_signal,
+	[SYNX_MERGE]                = synx_handle_merge,
+	[SYNX_REGISTER_PAYLOAD]     = synx_handle_async_wait,
+	[SYNX_DEREGISTER_PAYLOAD]   = synx_handle_cancel_async_wait,
+	[SYNX_WAIT]                 = synx_handle_wait,
+	[SYNX_BIND]                 = synx_handle_bind,
+	[SYNX_GETSTATUS]            = synx_handle_getstatus,
+	[SYNX_IMPORT]               = synx_handle_import,
+	[SYNX_EXPORT]               = synx_handle_export,
+	[SYNX_IMPORT_ARR]           = synx_handle_import_arr,
+	[SYNX_GETFENCE_FD]          = synx_handle_get_fence,
+	[SYNX_INITIALIZE]           = NULL,
+	[SYNX_RELEASE_N]            = synx_handle_release_n,
+	[SYNX_INITIALIZE_V3]        = NULL,
+	[SYNX_GET_SYS_INFO]         = NULL,
+	[SYNX_IMPORT_V2]            = synx_handle_import_v2,
+	[SYNX_IMPORT_ARR_V2]        = synx_handle_import_arr_v2,
+	[SYNX_MERGE_N]              = synx_handle_merge_n,
+	[SYNX_SIGNAL_N]             = synx_handle_signal_n,
+	[SYNX_REGISTER_PAYLOAD_N]   = synx_handle_async_wait_n,
+	[SYNX_DEREGISTER_PAYLOAD_N] = synx_handle_cancel_async_wait_n,
+	[SYNX_GET]                  = synx_handle_get,
+	[SYNX_POLL_READ]            = synx_handle_poll_read,
+#if IS_ENABLED(CONFIG_DEBUG_FS)
+	[SYNX_RECOVER]              = synx_handle_recover,
+#endif
+};
+
+long synx_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
 {
-	s32 rc = 0;
 	struct synx_private_ioctl_arg k_ioctl;
 	struct synx_session *session = filep->private_data;
+	int rc = -SYNX_INVALID;
 
 	if (cmd != SYNX_PRIVATE_IOCTL_CMD) {
 		dprintk(SYNX_ERR, "invalid ioctl cmd\n");
 		return -ENOIOCTLCMD;
 	}
 
-	if (copy_from_user(&k_ioctl,
-			(struct synx_private_ioctl_arg *)arg,
-			sizeof(k_ioctl))) {
+	if (copy_from_user(&k_ioctl, (void __user *)arg, sizeof(k_ioctl))) {
 		dprintk(SYNX_ERR, "invalid ioctl args\n");
 		return -EFAULT;
 	}
@@ -1259,111 +1315,47 @@ long synx_ioctl(struct file *filep,
 	if (!k_ioctl.ioctl_ptr)
 		return -SYNX_INVALID;
 
-	if (IS_ERR_OR_NULL(session) && k_ioctl.id != SYNX_INITIALIZE &&
-			k_ioctl.id != SYNX_GET_SYS_INFO) {
-		dprintk(SYNX_ERR, "session is not initialized\n");
-		return -SYNX_INVALID;
-	}
+	dprintk(SYNX_VERB, "Enter cmd %u from pid %d\n", k_ioctl.id, current->pid);
 
-	dprintk(SYNX_VERB, "Enter cmd %u from pid %d\n",
-		k_ioctl.id, current->pid);
-
-	switch (k_ioctl.id) {
-	case SYNX_INITIALIZE:
+	if (k_ioctl.id == SYNX_INITIALIZE) {
 		rc = synx_handle_initialize(&k_ioctl, &session);
 		filep->private_data = session;
-		break;
-	case SYNX_INITIALIZE_V3:
-		rc = synx_handle_initialize_v3(&k_ioctl, &session);
-		filep->private_data = session;
-		break;
-	case SYNX_CREATE:
-		rc = synx_handle_create(&k_ioctl, session);
-		break;
-	case SYNX_RELEASE:
-		rc = synx_handle_release(&k_ioctl, session);
-		break;
-	case SYNX_RELEASE_N:
-		rc = synx_handle_release_n(&k_ioctl, session);
-		break;
-	case SYNX_REGISTER_PAYLOAD:
-		rc = synx_handle_async_wait(&k_ioctl,
-				session);
-		break;
-	case SYNX_REGISTER_PAYLOAD_N:
-		rc = synx_handle_async_wait_n(&k_ioctl,
-				session);
-		break;
-	case SYNX_DEREGISTER_PAYLOAD:
-		rc = synx_handle_cancel_async_wait(&k_ioctl,
-				session);
-		break;
-	case SYNX_DEREGISTER_PAYLOAD_N:
-		rc = synx_handle_cancel_async_wait_n(&k_ioctl,
-				session);
-		break;
-	case SYNX_SIGNAL:
-		rc = synx_handle_signal(&k_ioctl, session);
-		break;
-	case SYNX_SIGNAL_N:
-		rc = synx_handle_signal_n(&k_ioctl, session);
-		break;
-	case SYNX_MERGE:
-		rc = synx_handle_merge(&k_ioctl, session);
-		break;
-	case SYNX_MERGE_N:
-		rc = synx_handle_merge_n(&k_ioctl, session);
-		break;
-	case SYNX_WAIT:
-		rc = synx_handle_wait(&k_ioctl, session);
-		if (copy_to_user((void *)arg,
-			&k_ioctl,
-			sizeof(k_ioctl))) {
-			dprintk(SYNX_ERR, "invalid ioctl args\n");
-			rc = -EFAULT;
-		}
-		break;
-	case SYNX_BIND:
-		rc = synx_handle_bind(&k_ioctl, session);
-		break;
-	case SYNX_GETSTATUS:
-		rc = synx_handle_getstatus(&k_ioctl, session);
-		break;
-	case SYNX_GET:
-		rc = synx_handle_get(&k_ioctl, session);
-		break;
-	case SYNX_IMPORT:
-		rc = synx_handle_import(&k_ioctl, session);
-		break;
-	case SYNX_IMPORT_V2:
-		rc = synx_handle_import_v2(&k_ioctl, session);
-		break;
-	case SYNX_IMPORT_ARR:
-		rc = synx_handle_import_arr(&k_ioctl, session);
-		break;
-	case SYNX_IMPORT_ARR_V2:
-		rc = synx_handle_import_arr_v2(&k_ioctl, session);
-		break;
-	case SYNX_EXPORT:
-		rc = synx_handle_export(&k_ioctl, session);
-		break;
-	case SYNX_GETFENCE_FD:
-		rc = synx_handle_get_fence(&k_ioctl, session);
-		break;
-	case SYNX_GET_SYS_INFO:
-		rc = synx_handle_get_sys_info(&k_ioctl);
-		break;
-#if IS_ENABLED(CONFIG_DEBUG_FS)
-	case SYNX_RECOVER:
-		rc = synx_handle_recover(&k_ioctl, session);
-		break;
-#endif /* CONFIG_DEBUG_FS */
-	default:
-		rc = -SYNX_INVALID;
+		goto out;
 	}
 
-	dprintk(SYNX_VERB, "exit with status %d\n", rc);
+	if (k_ioctl.id == SYNX_INITIALIZE_V3) {
+		rc = synx_handle_initialize_v3(&k_ioctl, &session);
+		filep->private_data = session;
+		goto out;
+	}
 
+	if (k_ioctl.id == SYNX_GET_SYS_INFO) {
+		rc = synx_handle_get_sys_info(&k_ioctl);
+		goto out;
+	}
+
+	if (IS_ERR_OR_NULL(session)) {
+		dprintk(SYNX_ERR, "session is not initialized\n");
+		rc = -SYNX_INVALID;
+		goto out;
+	}
+
+	if (k_ioctl.id >= ARRAY_SIZE(synx_table) || !synx_table[k_ioctl.id]) {
+		dprintk(SYNX_ERR, "unsupported or unhandled ioctl id %u\n", k_ioctl.id);
+		rc = -SYNX_INVALID;
+		goto out;
+	}
+
+	rc = synx_table[k_ioctl.id](&k_ioctl, session);
+
+	if ((k_ioctl.id == SYNX_WAIT || k_ioctl.id == SYNX_POLL_READ) &&
+		copy_to_user((void __user *)arg, &k_ioctl, sizeof(k_ioctl))) {
+		dprintk(SYNX_ERR, "invalid ioctl args\n");
+		rc = -EFAULT;
+	}
+
+out:
+	dprintk(SYNX_VERB, "exit with status %d\n", rc);
 	return rc;
 }
 
