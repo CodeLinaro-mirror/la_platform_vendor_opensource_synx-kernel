@@ -718,7 +718,7 @@ int synx_alloc_local_handle(u32 *new_synx)
 
 int synx_util_init_handle(struct synx_client *client,
 	struct synx_coredata *synx_obj, u32 *new_h_synx,
-	void *map_entry)
+	void *map_entry, bool may_sleep)
 {
 	int rc = SYNX_SUCCESS;
 	bool found = false;
@@ -728,7 +728,7 @@ int synx_util_init_handle(struct synx_client *client,
 		IS_ERR_OR_NULL(new_h_synx) || IS_ERR_OR_NULL(map_entry))
 		return -SYNX_INVALID;
 
-	synx_data = kzalloc(sizeof(*synx_data), GFP_ATOMIC);
+	synx_data = kzalloc(sizeof(*synx_data), may_sleep ? GFP_KERNEL : GFP_ATOMIC);
 	if (IS_ERR_OR_NULL(synx_data)) {
 		dprintk(SYNX_ERR, "synx data allocation failed\n");
 		return -SYNX_NOMEM;
@@ -1552,23 +1552,26 @@ void synx_util_cb_dispatch(struct work_struct *cb_dispatch)
 	client = synx_get_client(synx_cb->session);
 	if (IS_ERR_OR_NULL(client)) {
 		dprintk(SYNX_ERR,
-			"invalid session data %pK in cb payload\n",
-			synx_cb->session);
+			"invalid session data %pK in cb payload: idx %u, h_synx %u, status %u\n",
+			synx_cb->session, synx_cb->idx, synx_cb->h_synx, synx_cb->status);
 		goto free;
 	}
 
 	if (synx_cb->idx == 0 ||
 		synx_cb->idx >= SYNX_MAX_OBJS) {
 		dprintk(SYNX_ERR,
-			"[sess :%llu] invalid cb index %u\n",
-			client->id, synx_cb->idx);
+			"[sess :%llu] invalid cb index %u, h_synx %u, status %u\n",
+			client->id, synx_cb->idx, synx_cb->h_synx, synx_cb->status);
 		goto fail;
 	}
 
 	status = synx_cb->status;
 	cb = &client->cb_table[synx_cb->idx];
 	if (!cb->is_valid) {
-		dprintk(SYNX_ERR, "invalid cb payload\n");
+		dprintk(SYNX_ERR,
+			"invalid cb payload: session %pK, client_id %llu, idx %u, handle %u, status %u, cb_idx %u, cb_h_synx %u\n",
+			synx_cb->session, client->id, synx_cb->idx, synx_cb->h_synx,
+			synx_cb->status, cb->idx, cb->kernel_cb.h_synx);
 		goto fail;
 	}
 
@@ -1770,8 +1773,8 @@ static void synx_client_cleanup(struct work_struct *dispatch)
 	struct hlist_node *tmp;
 
 	if (__ratelimit(&synx_ratelimit_state))
-		dprintk(SYNX_INFO, "[sess :%llu] session removed %s\n",
-			client->id, client->name);
+		dprintk(SYNX_INFO, "[sess :%llu] session removed %s addr %pK\n",
+			client->id, client->name, client);
 	/*
 	 * go over all the remaining synx obj handles
 	 * un-released from this session and remove them.
