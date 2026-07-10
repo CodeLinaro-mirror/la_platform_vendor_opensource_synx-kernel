@@ -51,6 +51,11 @@ CONFIG_QTI_HW_FENCE := y
 KBUILD_CPPFLAGS += -DCONFIG_QTI_HW_FENCE=1
 endif
 
+ifeq ($(CONFIG_ARCH_PEBBLE), y)
+KBUILD_CPPFLAGS += -DCONFIG_SYNX_IMPL=1
+ccflags-y += -DCONFIG_SYNX_IMPL=1
+endif
+
 obj-m += synx-driver.o
 
 # synx-kernel module only includes interface layer files
