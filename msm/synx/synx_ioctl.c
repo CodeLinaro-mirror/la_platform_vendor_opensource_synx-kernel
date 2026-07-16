@@ -371,6 +371,11 @@ static int synx_handle_import_arr(
 			k_ioctl->size))
 		return -EFAULT;
 
+	if (arr_info.num_objs == 0 || arr_info.num_objs >= SYNX_MAX_OBJS) {
+		dprintk(SYNX_ERR, "invalid num_objs %u\n", arr_info.num_objs);
+		return -SYNX_INVALID;
+	}
+
 	arr = kcalloc(arr_info.num_objs,
 				sizeof(*arr), GFP_KERNEL);
 	if (IS_ERR_OR_NULL(arr))
@@ -431,6 +436,9 @@ static int synx_handle_import_arr(
 			arr,
 			sizeof(*arr) * arr_info.num_objs)) {
 			rc = -EFAULT;
+			while (idx > 0)
+				synx_release(session,
+					arr[--idx].new_synx_obj);
 			goto fail;
 		}
 	}
@@ -457,6 +465,11 @@ static int synx_handle_import_arr_v2(
 			u64_to_user_ptr(k_ioctl->ioctl_ptr),
 			k_ioctl->size))
 		return -EFAULT;
+
+	if (arr_info_v2.num_objs == 0 || arr_info_v2.num_objs >= SYNX_MAX_OBJS) {
+		dprintk(SYNX_ERR, "invalid num_objs %u\n", arr_info_v2.num_objs);
+		return -SYNX_INVALID;
+	}
 
 	arr_v2 = kcalloc(arr_info_v2.num_objs,
 				sizeof(*arr_v2), GFP_KERNEL);
@@ -525,6 +538,9 @@ static int synx_handle_import_arr_v2(
 			arr_v2,
 			sizeof(*arr_v2) * arr_info_v2.num_objs)) {
 			rc = -EFAULT;
+			while (idx > 0)
+				synx_release(session,
+					arr_v2[--idx].new_synx_obj);
 			goto fail;
 		}
 	}
