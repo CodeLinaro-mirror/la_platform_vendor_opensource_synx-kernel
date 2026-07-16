@@ -115,7 +115,7 @@ bool synx_fetch_global_shared_memory_handle_details(u32 synx_handle,
 		return false;
 	}
 	entry = synx_fetch_global_coredata_object(idx);
-	memcpy(synx_global_entry, entry, glcoredata_size);
+	memcpy(synx_global_entry, entry, sizeof(struct synx_global_coredata));
 	synx_gmem_unlock(idx, &flags);
 
 	return true;
@@ -1259,7 +1259,7 @@ int synx_global_recover_index(enum synx_core_id core_id, bool global_unlock,
 	struct synx_global_coredata *synx_g_obj;
 	bool clear = false;
 	bool update = false;
-	uint32_t h_synx, h_hwfence;
+	uint32_t h_synx = 0, h_hwfence = 0;
 
 	if (!synx_gmem.table) {
 		dprintk(SYNX_ERR, "synx_gmem is NULL\n");

@@ -25,6 +25,8 @@
 #include "synx_interop.h"
 #include "synx_ioctl.h"
 
+static bool synx_nosupport_flag;
+
 struct synx_hwfence_interops hwfence_shared_ops = { NULL };
 struct synx_hwfence_interops synx_shared_ops = { NULL };
 
@@ -2579,6 +2581,8 @@ retry:
 
 		dprintk(SYNX_DBG, "mapped fence %pK to existing handle %u\n",
 			params->fence, *params->new_h_synx);
+
+		return rc;
 	}
 
 	if (test_bit(SYNX_HW_FENCE_FLAG_ENABLED_BIT,
@@ -2891,8 +2895,8 @@ struct synx_session *synx_internal_initialize(
 	spin_unlock_bh(&synx_dev->native->metadata_map_lock);
 
 	if (__ratelimit(&synx_ratelimit_state))
-		dprintk(SYNX_INFO, "[sess :%llu] session created %s\n",
-			client->id, params->name);
+		dprintk(SYNX_INFO, "[sess :%llu] session created %s, addr %pK\n",
+			client->id, params->name, client);
 
 	return (struct synx_session *)client;
 }
@@ -3036,7 +3040,9 @@ int synx_ipc_callback(u32 client_id,
 
 	signal_cb = kzalloc(sizeof(*signal_cb), GFP_ATOMIC);
 	if (IS_ERR_OR_NULL(signal_cb)) {
-		dprintk(SYNX_ERR, "signal_cb allocation failed\n");
+		dprintk(SYNX_ERR,
+			"signal_cb allocation failed for handle %u, status %u, client_id %u\n",
+			handle, status, client_id);
 		return -SYNX_NOMEM;
 	}
 
@@ -3345,9 +3351,66 @@ static struct notifier_block qcom_synx_notif_block = {
 	.notifier_call = qcom_synx_hibernation_notifier,
 };
 
+static int synx_dt_get_array(void)
+{
+	struct device_node *root;
+	u32 *arr = NULL;
+	int elems, ret = 0;
+
+	root = of_find_node_by_path("/");
+	if (!root)
+		return -ENODEV;
+
+	elems = of_property_count_elems_of_size(root, "qcom,msm-id", sizeof(u32));
+	if (elems < 2) {
+		dprintk(SYNX_ERR, "msm-id elems=%d\n", elems);
+		of_node_put(root);
+		return -EINVAL;
+	}
+
+	arr = kmalloc_array(elems, sizeof(u32), GFP_KERNEL);
+	if (!arr) {
+		dprintk(SYNX_ERR, "allocation failed\n");
+		of_node_put(root);
+		return -ENOMEM;
+	}
+
+	ret = of_property_read_u32_array(root, "qcom,msm-id", arr, elems);
+	if (ret < 0) {
+		dprintk(SYNX_ERR, "failed reading array %d\n", ret);
+		goto out;
+	}
+
+	for (int i = 0; i < elems; i++) {
+		switch (arr[i]) {
+		case QCOM_ID_RAVELINP:
+		case QCOM_ID_RAVELIN:
+		case QCOM_ID_BOURTZI:
+		case QCOM_ID_BOURTZIP:
+			synx_nosupport_flag = true;
+			ret = -EOPNOTSUPP;
+			goto out;
+		default:
+			break;
+		}
+	}
+
+out:
+	kfree(arr);
+	of_node_put(root);
+	return ret;
+}
+
 static int __init synx_init(void)
 {
-	int rc;
+	int rc, ret;
+
+	ret = synx_dt_get_array();
+
+	if (ret == -EOPNOTSUPP) {
+		dprintk(SYNX_ERR, "Driver is not supported\n");
+		return 0;
+	}
 
 	dprintk(SYNX_INFO, "device initialization start\n");
 
@@ -3471,6 +3534,11 @@ alloc_fail:
 static void __exit synx_exit(void)
 {
 	struct error_node *err_node, *err_node_tmp;
+
+	if (synx_nosupport_flag) {
+		dprintk(SYNX_ERR, "Driver is not supported\n");
+		return;
+	}
 
 	flush_workqueue(synx_dev->wq_cb);
 	flush_workqueue(synx_dev->wq_cleanup);

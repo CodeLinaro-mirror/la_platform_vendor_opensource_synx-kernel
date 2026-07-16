@@ -553,7 +553,20 @@ void synx_util_object_destroy(struct synx_coredata *synx_obj)
 		kfree(data);
 	}
 
-	if (dma_fence_is_array(synx_obj->fence)) {
+	/*
+	 * Release the extra child map_entry references that were acquired
+	 * during merge creation (synx_util_populate_map_entries). Only
+	 * objects created by the SYNX_MERGE / SYNX_MERGE_N path have
+	 * SYNX_CREATE_MERGED_FENCE set in their type and own those extra
+	 * references. Objects created by SYNX_IMPORT wrapping an already-
+	 * signaled dma_fence_array never take those extra references, so
+	 * releasing them here would cause a double-put and potential UAF in
+	 * synx_util_release_map_entry(). Guard this block with
+	 * synx_util_is_merged_object() to ensure we only release references
+	 * that were actually acquired.
+	 */
+	if (synx_util_is_merged_object(synx_obj) &&
+		dma_fence_is_array(synx_obj->fence)) {
 		array = to_dma_fence_array(synx_obj->fence);
 		if (!IS_ERR_OR_NULL(array)) {
 			for (i = 0; i < array->num_fences; i++) {
@@ -1539,23 +1552,26 @@ void synx_util_cb_dispatch(struct work_struct *cb_dispatch)
 	client = synx_get_client(synx_cb->session);
 	if (IS_ERR_OR_NULL(client)) {
 		dprintk(SYNX_ERR,
-			"invalid session data %pK in cb payload\n",
-			synx_cb->session);
+			"invalid session data %pK in cb payload: idx %u, h_synx %u, status %u\n",
+			synx_cb->session, synx_cb->idx, synx_cb->h_synx, synx_cb->status);
 		goto free;
 	}
 
 	if (synx_cb->idx == 0 ||
 		synx_cb->idx >= SYNX_MAX_OBJS) {
 		dprintk(SYNX_ERR,
-			"[sess :%llu] invalid cb index %u\n",
-			client->id, synx_cb->idx);
+			"[sess :%llu] invalid cb index %u, h_synx %u, status %u\n",
+			client->id, synx_cb->idx, synx_cb->h_synx, synx_cb->status);
 		goto fail;
 	}
 
 	status = synx_cb->status;
 	cb = &client->cb_table[synx_cb->idx];
 	if (!cb->is_valid) {
-		dprintk(SYNX_ERR, "invalid cb payload\n");
+		dprintk(SYNX_ERR,
+			"invalid cb payload: session %pK, client_id %llu, idx %u, handle %u, status %u, cb_idx %u, cb_h_synx %u\n",
+			synx_cb->session, client->id, synx_cb->idx, synx_cb->h_synx,
+			synx_cb->status, cb->idx, cb->kernel_cb.h_synx);
 		goto fail;
 	}
 
@@ -1757,8 +1773,8 @@ static void synx_client_cleanup(struct work_struct *dispatch)
 	struct hlist_node *tmp;
 
 	if (__ratelimit(&synx_ratelimit_state))
-		dprintk(SYNX_INFO, "[sess :%llu] session removed %s\n",
-			client->id, client->name);
+		dprintk(SYNX_INFO, "[sess :%llu] session removed %s addr %pK\n",
+			client->id, client->name, client);
 	/*
 	 * go over all the remaining synx obj handles
 	 * un-released from this session and remove them.
