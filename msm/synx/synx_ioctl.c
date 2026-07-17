@@ -193,7 +193,8 @@ static int synx_handle_get(struct synx_private_ioctl_arg *k_ioctl,
 	params.type = get_info.type;
 	if (params.type == SYNX_GET_FENCE_PARAMS ||
 		params.type == SYNX_GET_STATUS_PARAMS ||
-		params.type == SYNX_GET_CLIENT_DATA) {
+		params.type == SYNX_GET_CLIENT_DATA ||
+		params.type == SYNX_GET_IS_REUSABLE_FENCE) {
 		params.h_synx = get_info.synx_obj;
 	} else if (params.type != SYNX_GET_MAX_GLOBAL_FENCES) {
 		return -SYNX_INVALID;
@@ -222,6 +223,8 @@ static int synx_handle_get(struct synx_private_ioctl_arg *k_ioctl,
 		get_info.client_data = params.client_data;
 	} else if (get_info.type == SYNX_GET_MAX_GLOBAL_FENCES) {
 		get_info.max_global_fences = params.max_global_fences;
+	} else if (get_info.type == SYNX_GET_IS_REUSABLE_FENCE) {
+		get_info.is_reusable = params.is_reusable;
 	} else {
 		return -SYNX_INVALID;
 	}
