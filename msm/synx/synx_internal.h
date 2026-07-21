@@ -11,6 +11,7 @@
 #include <linux/device.h>
 #include <linux/debugfs.h>
 #include <linux/dma-fence.h>
+#include <linux/version.h>
 #include "synx_err.h"
 #include "synx_api.h"
 #include "synx_interop.h"
@@ -166,4 +167,16 @@ int synx_open(struct inode *inode, struct file *filep);
 int synx_close(struct inode *inode, struct file *filep);
 void synx_dma_fence_callback(struct dma_fence *fence, struct dma_fence_cb *cb);
 void synx_test_fence_release(struct dma_fence *fence);
+
+/*
+ * Compatibility macro to access the fence spinlock across kernel versions:
+ * - Linux 6.10+: dma_fence_get_lock() introduced when fence->lock was removed
+ * - Older kernels: fence->lock member exists directly
+ */
+#if (KERNEL_VERSION(7, 1, 0) <= LINUX_VERSION_CODE)
+#define synx_dma_fence_get_lock(f)	dma_fence_spinlock(f)
+#else
+#define synx_dma_fence_get_lock(f)	((f)->lock)
+#endif
+
 #endif /* __SYNX_INTERNAL_H__ */
