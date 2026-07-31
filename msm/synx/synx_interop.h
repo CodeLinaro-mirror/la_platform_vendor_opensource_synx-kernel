@@ -57,6 +57,14 @@ enum synx_core_id {
 };
 
 /**
+ * SYNX_IMPORT_SKIP_SOCCP_SIGNAL : if set in import_flags, then skip the
+ * signal via soccp path.
+ * Note: this is set as maximum bit value to avoid overlapping with
+ * new import flags. And restricted only to GFX synx client.
+ */
+#define SYNX_IMPORT_SKIP_SOCCP_SIGNAL  0x80000000
+
+/**
  * SYNX_NATIVE_FENCE_FLAG_ENABLED_BIT - synx-native fence is enabled for the dma_fence
  *
  * This flag is set in dma-fence flags when fences are backed by a native synx fence.
