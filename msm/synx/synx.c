@@ -2322,6 +2322,11 @@ static int synx_handle_import_arr(
 			k_ioctl->size))
 		return -EFAULT;
 
+	if (arr_info.num_objs == 0 || arr_info.num_objs >= SYNX_MAX_OBJS) {
+		dprintk(SYNX_ERR, "invalid num_objs %u\n", arr_info.num_objs);
+		return -SYNX_INVALID;
+	}
+
 	arr = kcalloc(arr_info.num_objs,
 				sizeof(*arr), GFP_KERNEL);
 	if (IS_ERR_OR_NULL(arr))
@@ -2338,6 +2343,7 @@ static int synx_handle_import_arr(
 		params.type = SYNX_IMPORT_INDV_PARAMS;
 		params.indv.new_h_synx = &arr[idx].new_synx_obj;
 		params.indv.flags = arr[idx].flags;
+		params.indv.fence = NULL;
 
 		if (arr[idx].flags & SYNX_IMPORT_DMA_FENCE)
 			params.indv.fence =
@@ -2366,6 +2372,9 @@ static int synx_handle_import_arr(
 			arr,
 			sizeof(*arr) * arr_info.num_objs)) {
 			rc = -EFAULT;
+			while (idx > 0)
+				synx_release(session,
+					arr[--idx].new_synx_obj);
 			goto fail;
 		}
 	}
