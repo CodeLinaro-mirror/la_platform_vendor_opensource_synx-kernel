@@ -262,7 +262,7 @@ static int synx_handle_import(struct synx_private_ioctl_arg *k_ioctl,
 				import_info.desc.id[0]);
 			return -SYNX_INVALID;
 		}
-	} else if ((import_info.flags & SYNX_IMPORT_SYNX_FENCE) &&
+	} else if ((import_info.flags & (SYNX_IMPORT_SYNX_FENCE | SYNX_IMPORT_REUSABLE)) &&
 		(import_info.synx_obj != 0)) {
 		params.indv.fence = &import_info.synx_obj;
 	}
@@ -318,7 +318,7 @@ static int synx_handle_import_v2(struct synx_private_ioctl_arg *k_ioctl,
 				import_info_v2.desc.id[0]);
 			return -SYNX_INVALID;
 		}
-	} else if ((import_info_v2.flags & SYNX_IMPORT_SYNX_FENCE) &&
+	} else if ((import_info_v2.flags & (SYNX_IMPORT_SYNX_FENCE | SYNX_IMPORT_REUSABLE)) &&
 		(import_info_v2.synx_obj != 0)) {
 		params.indv_v2.fence = &import_info_v2.synx_obj;
 	}
@@ -409,7 +409,7 @@ static int synx_handle_import_arr(
 				rc = -SYNX_INVALID;
 				break;
 			}
-		} else if ((arr[idx].flags & SYNX_IMPORT_SYNX_FENCE) &&
+		} else if ((arr[idx].flags & (SYNX_IMPORT_SYNX_FENCE | SYNX_IMPORT_REUSABLE)) &&
 			(arr[idx].synx_obj != 0)) {
 			params.indv.fence = &arr[idx].synx_obj;
 		}
@@ -508,7 +508,7 @@ static int synx_handle_import_arr_v2(
 				rc = -SYNX_INVALID;
 				break;
 			}
-		} else if ((arr_v2[idx].flags & SYNX_IMPORT_SYNX_FENCE) &&
+		} else if ((arr_v2[idx].flags & (SYNX_IMPORT_SYNX_FENCE | SYNX_IMPORT_REUSABLE)) &&
 			(arr_v2[idx].synx_obj != 0)) {
 			params.indv_v2.fence = &arr_v2[idx].synx_obj;
 		}
