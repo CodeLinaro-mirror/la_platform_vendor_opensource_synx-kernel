@@ -115,7 +115,7 @@ bool synx_fetch_global_shared_memory_handle_details(u32 synx_handle,
 		return false;
 	}
 	entry = synx_fetch_global_coredata_object(idx);
-	memcpy(synx_global_entry, entry, glcoredata_size);
+	memcpy(synx_global_entry, entry, sizeof(struct synx_global_coredata));
 	synx_gmem_unlock(idx, &flags);
 
 	return true;
@@ -701,6 +701,7 @@ int synx_global_test_status_set_parent_child_wait(u32 idx,
 	int rc;
 	unsigned long flags;
 	u32 status;
+	u32 parent_status = SYNX_STATE_ACTIVE;
 	struct synx_global_coredata *synx_g_obj;
 	u32 h_parents[SYNX_GLOBAL_MAX_PARENTS] = {0};
 	u32 i;
@@ -755,7 +756,11 @@ int synx_global_test_status_set_parent_child_wait(u32 idx,
 				if (h_parents[i] != 0) {
 					dprintk(SYNX_DBG, "Setting waiter for parent idx %d\n",
 						h_parents[i]);
-					synx_global_set_waiting_core(h_parents[i], id);
+					parent_status =
+						synx_global_test_status_set_wait(h_parents[i], id);
+					if (parent_status != 0 &&
+						parent_status != SYNX_STATE_ACTIVE)
+						status = parent_status;
 				}
 			}
 			return status;
@@ -1259,7 +1264,7 @@ int synx_global_recover_index(enum synx_core_id core_id, bool global_unlock,
 	struct synx_global_coredata *synx_g_obj;
 	bool clear = false;
 	bool update = false;
-	uint32_t h_synx, h_hwfence;
+	uint32_t h_synx = 0, h_hwfence = 0;
 
 	if (!synx_gmem.table) {
 		dprintk(SYNX_ERR, "synx_gmem is NULL\n");

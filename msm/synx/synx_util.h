@@ -130,7 +130,7 @@ int synx_alloc_local_handle(u32 *new_synx);
 long synx_util_get_free_handle(unsigned long *bitmap, unsigned int size);
 int synx_util_init_handle(struct synx_client *client, struct synx_coredata *obj,
 			u32 *new_h_synx,
-			void *map_entry);
+			void *map_entry, bool may_sleep);
 
 u32 synx_encode_handle(u32 idx, u32 core_id, bool global_idx);
 
