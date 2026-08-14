@@ -274,7 +274,7 @@ static const char *synx_test_fence_driver_name(struct dma_fence *fence)
 void synx_test_fence_release(struct dma_fence *fence)
 {
 	/* release the memory allocated during create */
-	kfree(fence->lock);
+	kfree(synx_dma_fence_get_lock(fence));
 	kfree(fence);
 	dprintk(SYNX_MEM, "Released backing fence %pK\n", fence);
 }
@@ -793,7 +793,10 @@ static int synx_handle_dma_signal(
 			(struct dma_fence *)params.indv.dma_fence,
 			dma_signal_info.indv.dma_fd);
 
-		spin_lock_irqsave(((struct dma_fence *)params.indv.dma_fence)->lock, flags);
+		spinlock_t *fence_lock =
+			synx_dma_fence_get_lock((struct dma_fence *)params.indv.dma_fence);
+
+		spin_lock_irqsave(fence_lock, flags);
 		if (!dma_fence_is_signaled((struct dma_fence *)params.indv.dma_fence)) {
 			/*
 			 * Treating SYNX_STATE_SIGNALED_SUCESS and 0
@@ -805,7 +808,7 @@ static int synx_handle_dma_signal(
 
 			dma_fence_signal_locked((struct dma_fence *)params.indv.dma_fence);
 		}
-		spin_unlock_irqrestore(((struct dma_fence *)params.indv.dma_fence)->lock, flags);
+		spin_unlock_irqrestore(fence_lock, flags);
 
 		// Put the reference taken by file_get_fence
 		dma_fence_put((struct dma_fence *)params.indv.dma_fence);
