@@ -241,7 +241,8 @@ static int synx_native_check_bind(struct synx_client *client,
 		return -SYNX_NOENT;
 
 	rc = synx_util_init_handle(client, entry->synx_obj,
-			&h_synx, entry);
+			&h_synx, entry,
+			(client->session.type != SYNX_CLIENT_GFX_CTX0));
 	if (rc != SYNX_SUCCESS) {
 		dprintk(SYNX_ERR,
 			"[sess :%llu] new handle init failed\n",
@@ -309,7 +310,8 @@ static int synx_native_create_core(struct synx_client *client,
 	}
 
 	rc = synx_util_init_handle(client, map_entry->synx_obj,
-			params->h_synx, map_entry);
+			params->h_synx, map_entry,
+			(client->session.type != SYNX_CLIENT_GFX_CTX0));
 	if (rc < 0) {
 		dprintk(SYNX_ERR,
 			"[sess :%llu] unable to init new handle\n",
@@ -849,7 +851,10 @@ static int synx_signal_offload_job(
 	int rc = SYNX_SUCCESS;
 	struct synx_signal_cb *signal_cb;
 
-	signal_cb = kzalloc(sizeof(*signal_cb), GFP_ATOMIC);
+	if (client->session.type != SYNX_CLIENT_GFX_CTX0)
+		signal_cb = kzalloc(sizeof(*signal_cb), GFP_KERNEL);
+	else
+		signal_cb = kzalloc(sizeof(*signal_cb), GFP_ATOMIC);
 	if (IS_ERR_OR_NULL(signal_cb)) {
 		rc = -SYNX_NOMEM;
 		goto fail;
@@ -1416,7 +1421,8 @@ int synx_internal_merge(struct synx_session *session,
 		goto clean_up;
 
 	rc = synx_util_init_handle(client, synx_obj,
-			params->h_merged_obj, map_entry);
+			params->h_merged_obj, map_entry,
+			(session->type != SYNX_CLIENT_GFX_CTX0));
 	if (rc) {
 		dprintk(SYNX_ERR,
 			"[sess :%llu] unable to init merge handle %u\n",
@@ -1630,7 +1636,8 @@ int synx_internal_merge_n(struct synx_session *session,
 		goto clean_up;
 
 	rc = synx_util_init_handle(client, synx_obj,
-		params_indv->h_merged_obj, map_entry);
+		params_indv->h_merged_obj, map_entry,
+		(session->type != SYNX_CLIENT_GFX_CTX0));
 	if (rc) {
 		dprintk(SYNX_ERR,
 			"[sess :%llu] unable to init merge handle %u\n",
@@ -2263,7 +2270,8 @@ static int synx_native_import_handle(struct synx_client *client,
 	*params->new_h_synx = h_synx;
 
 	rc = synx_util_init_handle(client, map_entry->synx_obj,
-		params->new_h_synx, map_entry);
+		params->new_h_synx, map_entry,
+		(client->session.type != SYNX_CLIENT_GFX_CTX0));
 	if (rc != SYNX_SUCCESS) {
 		dprintk(SYNX_ERR,
 			"[sess :%llu] init of imported handle %u failed=%d\n",
@@ -2490,7 +2498,8 @@ retry:
 
 				rc = synx_util_init_handle(client,
 						map_entry->synx_obj,
-						params->new_h_synx, map_entry);
+						params->new_h_synx, map_entry,
+						(client->session.type != SYNX_CLIENT_GFX_CTX0));
 
 				#if defined(CONFIG_EXTENSIBLE_GLCOREDATA)
 				if (params_v2 && map_entry->synx_obj &&
@@ -2577,7 +2586,8 @@ retry:
 		}
 		#endif
 		rc = synx_util_init_handle(client, map_entry->synx_obj,
-			params->new_h_synx, map_entry);
+			params->new_h_synx, map_entry,
+			(client->session.type != SYNX_CLIENT_GFX_CTX0));
 
 		dprintk(SYNX_DBG, "mapped fence %pK to existing handle %u\n",
 			params->fence, *params->new_h_synx);
@@ -2895,8 +2905,8 @@ struct synx_session *synx_internal_initialize(
 	spin_unlock_bh(&synx_dev->native->metadata_map_lock);
 
 	if (__ratelimit(&synx_ratelimit_state))
-		dprintk(SYNX_INFO, "[sess :%llu] session created %s\n",
-			client->id, params->name);
+		dprintk(SYNX_INFO, "[sess :%llu] session created %s, addr %pK\n",
+			client->id, params->name, client);
 
 	return (struct synx_session *)client;
 }
@@ -3040,7 +3050,9 @@ int synx_ipc_callback(u32 client_id,
 
 	signal_cb = kzalloc(sizeof(*signal_cb), GFP_ATOMIC);
 	if (IS_ERR_OR_NULL(signal_cb)) {
-		dprintk(SYNX_ERR, "signal_cb allocation failed\n");
+		dprintk(SYNX_ERR,
+			"signal_cb allocation failed for handle %u, status %u, client_id %u\n",
+			handle, status, client_id);
 		return -SYNX_NOMEM;
 	}
 

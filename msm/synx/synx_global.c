@@ -701,6 +701,7 @@ int synx_global_test_status_set_parent_child_wait(u32 idx,
 	int rc;
 	unsigned long flags;
 	u32 status;
+	u32 parent_status = SYNX_STATE_ACTIVE;
 	struct synx_global_coredata *synx_g_obj;
 	u32 h_parents[SYNX_GLOBAL_MAX_PARENTS] = {0};
 	u32 i;
@@ -755,7 +756,11 @@ int synx_global_test_status_set_parent_child_wait(u32 idx,
 				if (h_parents[i] != 0) {
 					dprintk(SYNX_DBG, "Setting waiter for parent idx %d\n",
 						h_parents[i]);
-					synx_global_set_waiting_core(h_parents[i], id);
+					parent_status =
+						synx_global_test_status_set_wait(h_parents[i], id);
+					if (parent_status != 0 &&
+						parent_status != SYNX_STATE_ACTIVE)
+						status = parent_status;
 				}
 			}
 			return status;
