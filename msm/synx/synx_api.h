@@ -1207,6 +1207,8 @@ int synx_create(struct synx_session *session, struct synx_create_params *params)
  * synx session. Clients should register callback functions with minimal computation.
  * Clients are advised to set a timeout when registering callbacks to handle
  * potential delays in signal from producer.
+ * Timeout is NOT SUPPORTED for reusable h_synx
+ * client must pass SYNX_NO_TIMEOUT for a reusable fence.
  *
  * @param session : Session ptr (returned from synx_initialize)
  * @param params  : Callback params.
@@ -1225,6 +1227,8 @@ int synx_async_wait(struct synx_session *session, struct synx_callback_params *p
  * registration fails in array of callback list. The status of individual registration failure
  * can be seen in result member of synx_callback_indv_params. Clients are advised to set a
  * timeout when registering callbacks to handle potential delays in signal from producer.
+ * Timeout is NOT SUPPORTED for reusable h_synx
+ * client must pass SYNX_NO_TIMEOUT for a reusable fence.
  *
  * @param session : Session ptr (returned from synx_initialize)
  * @param params  : Callback params.
