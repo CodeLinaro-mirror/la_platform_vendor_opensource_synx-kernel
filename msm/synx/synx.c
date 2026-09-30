@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /*
  * Copyright (c) 2019-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022, 2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #define pr_fmt(fmt) "synx: " fmt
 
@@ -23,11 +23,12 @@ struct synx_device *synx_dev;
 void synx_external_callback(s32 sync_obj, int status, void *data)
 {
 	int rc;
-	struct synx_handle_coredata *synx_data;
-	struct synx_coredata *synx_obj;
+	struct synx_handle_coredata *synx_data = NULL;
+	struct synx_coredata *synx_obj = NULL;
 	struct synx_client *client = NULL;
 	struct synx_external_data *bind_data = data;
 	struct hash_key_data *entry = NULL;
+	u32 session_id;
 
 	if (!bind_data) {
 		pr_err("invalid payload from sync external obj %d\n",
@@ -35,41 +36,43 @@ void synx_external_callback(s32 sync_obj, int status, void *data)
 		return;
 	}
 
+	session_id = bind_data->session_id.client_id;
+
 	client = synx_get_client(bind_data->session_id);
-	if (!client) {
-		pr_err("invalid payload content from sync external obj %d\n",
-			sync_obj);
-		goto free;
+	if (client) {
+		synx_data = synx_util_acquire_handle(client, bind_data->h_synx);
+		synx_obj = synx_util_obtain_object(synx_data);
+	} else {
+		pr_info("[sess: %u] session gone, recovering ext_id %d from tbl\n",
+			session_id, sync_obj);
 	}
 
-	synx_data = synx_util_acquire_handle(client, bind_data->h_synx);
-	synx_obj = synx_util_obtain_object(synx_data);
 	if (!synx_obj || !synx_obj->fence) {
 		pr_info("[sess: %u] invalid cb ext_id %d h_synx %d status %d\n",
-			client->id, sync_obj, bind_data->h_synx, status);
+			session_id, sync_obj, bind_data->h_synx, status);
 		entry = synx_util_retrieve_data(sync_obj,
 							SYNX_CAMERA_ID_TBL);
 		if (entry) {
 			pr_info("[sess: %u] ext_id %d h_synx %d found in tbl\n",
-				client->id, sync_obj, bind_data->h_synx);
+				session_id, sync_obj, bind_data->h_synx);
 			synx_obj = (struct synx_coredata *)entry->data;
 			if (!synx_obj)
 				goto put_cam_tbl_entry;
 		} else {
 			pr_info("[sess: %u] ext_id %d h_synx %d missing in tbl\n",
-				client->id, sync_obj, bind_data->h_synx);
+				session_id, sync_obj, bind_data->h_synx);
 			goto fail;
 		}
 	}
 
 	pr_debug("[sess: %u] external callback from %d on handle %d\n",
-		client->id, sync_obj, bind_data->h_synx);
+		session_id, sync_obj, bind_data->h_synx);
 
 	mutex_lock(&synx_obj->obj_lock);
 	rc = synx_signal_fence(synx_obj, status, true);
 	if (rc)
 		pr_err("[sess: %u] signaling failed for handle %d with err: %d\n",
-			client->id, bind_data->h_synx, rc);
+			session_id, bind_data->h_synx, rc);
 	else
 		synx_signal_core(synx_obj, status, true, sync_obj);
 	mutex_unlock(&synx_obj->obj_lock);
@@ -83,8 +86,8 @@ put_cam_tbl_entry:
 
 fail:
 	synx_util_release_handle(synx_data);
-	synx_put_client(client);
-free:
+	if (client)
+		synx_put_client(client);
 	kfree(bind_data);
 }
 EXPORT_SYMBOL_GPL(synx_external_callback);
