@@ -1,4 +1,4 @@
-KBUILD_OPTIONS+= SYNX_ROOT=$(shell pwd)
+KBUILD_OPTIONS+= SYNX_ROOT=$(KERNEL_SRC)/$(M)
 
 all:
 	$(MAKE) -C $(KERNEL_SRC) M=$(M) modules $(KBUILD_OPTIONS)
