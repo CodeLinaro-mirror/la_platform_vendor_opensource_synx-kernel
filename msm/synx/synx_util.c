@@ -718,7 +718,8 @@ int synx_alloc_local_handle(u32 *new_synx)
 
 int synx_util_init_handle(struct synx_client *client,
 	struct synx_coredata *synx_obj, u32 *new_h_synx,
-	void *map_entry, bool may_sleep)
+	void *map_entry, bool may_sleep,
+	struct synx_handle_coredata **handle_ref)
 {
 	int rc = SYNX_SUCCESS;
 	bool found = false;
@@ -757,11 +758,17 @@ int synx_util_init_handle(struct synx_client *client,
 			break;
 		}
 	}
-	if (unlikely(found))
+	if (unlikely(found)) {
 		kfree(synx_data);
-	else
+		synx_data = curr;
+	} else {
 		hash_add(client->handle_map,
 			&synx_data->node, *new_h_synx);
+	}
+	if (rc == SYNX_SUCCESS && handle_ref) {
+		kref_get(&synx_data->refcount);
+		*handle_ref = synx_data;
+	}
 	spin_unlock_bh(&client->handle_map_lock);
 
 	return rc;

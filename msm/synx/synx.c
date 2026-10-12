@@ -242,7 +242,7 @@ static int synx_native_check_bind(struct synx_client *client,
 
 	rc = synx_util_init_handle(client, entry->synx_obj,
 			&h_synx, entry,
-			(client->session.type != SYNX_CLIENT_GFX_CTX0));
+			(client->session.type != SYNX_CLIENT_GFX_CTX0), NULL);
 	if (rc != SYNX_SUCCESS) {
 		dprintk(SYNX_ERR,
 			"[sess :%llu] new handle init failed\n",
@@ -311,7 +311,7 @@ static int synx_native_create_core(struct synx_client *client,
 
 	rc = synx_util_init_handle(client, map_entry->synx_obj,
 			params->h_synx, map_entry,
-			(client->session.type != SYNX_CLIENT_GFX_CTX0));
+			(client->session.type != SYNX_CLIENT_GFX_CTX0), NULL);
 	if (rc < 0) {
 		dprintk(SYNX_ERR,
 			"[sess :%llu] unable to init new handle\n",
@@ -1338,6 +1338,7 @@ int synx_internal_merge(struct synx_session *session,
 	struct synx_handle_coredata *synx_data_child;
 	struct synx_map_entry **map_entry_list = NULL;
 	u64 security_key = SYNX_NO_SECURITY_KEY;
+	struct synx_handle_coredata *synx_data_merged = NULL;
 
 	if (IS_ERR_OR_NULL(session) || IS_ERR_OR_NULL(params))
 		return -SYNX_INVALID;
@@ -1422,7 +1423,7 @@ int synx_internal_merge(struct synx_session *session,
 
 	rc = synx_util_init_handle(client, synx_obj,
 			params->h_merged_obj, map_entry,
-			(session->type != SYNX_CLIENT_GFX_CTX0));
+			(session->type != SYNX_CLIENT_GFX_CTX0), &synx_data_merged);
 	if (rc) {
 		dprintk(SYNX_ERR,
 			"[sess :%llu] unable to init merge handle %u\n",
@@ -1497,11 +1498,15 @@ int synx_internal_merge(struct synx_session *session,
 	kfree(h_child_list);
 	kfree(h_child_idx_list);
 	kfree(map_entry_list);
+	if (synx_data_merged)
+		synx_util_release_handle(synx_data_merged);
 	synx_put_client(client);
 	return SYNX_SUCCESS;
 clear:
 	kfree(map_entry_list);
 	synx_native_release_core(client, (*params->h_merged_obj));
+	if (synx_data_merged)
+		synx_util_release_handle(synx_data_merged);
 	synx_put_client(client);
 	return rc;
 
@@ -1541,6 +1546,7 @@ int synx_internal_merge_n(struct synx_session *session,
 	struct synx_handle_coredata *synx_data_child;
 	struct synx_map_entry **map_entry_list = NULL;
 	struct synx_merge_indv_params *params_indv = NULL;
+	struct synx_handle_coredata *synx_data_merged = NULL;
 
 	if (IS_ERR_OR_NULL(session) || IS_ERR_OR_NULL(params))
 		return -SYNX_INVALID;
@@ -1637,7 +1643,7 @@ int synx_internal_merge_n(struct synx_session *session,
 
 	rc = synx_util_init_handle(client, synx_obj,
 		params_indv->h_merged_obj, map_entry,
-		(session->type != SYNX_CLIENT_GFX_CTX0));
+		(session->type != SYNX_CLIENT_GFX_CTX0), &synx_data_merged);
 	if (rc) {
 		dprintk(SYNX_ERR,
 			"[sess :%llu] unable to init merge handle %u\n",
@@ -1715,11 +1721,15 @@ int synx_internal_merge_n(struct synx_session *session,
 	kfree(h_child_list);
 	kfree(h_child_idx_list);
 	kfree(map_entry_list);
+	if (synx_data_merged)
+		synx_util_release_handle(synx_data_merged);
 	synx_put_client(client);
 	return SYNX_SUCCESS;
 clear:
 	kfree(map_entry_list);
 	synx_native_release_core(client, (*params_indv->h_merged_obj));
+	if (synx_data_merged)
+		synx_util_release_handle(synx_data_merged);
 	synx_put_client(client);
 	return rc;
 
@@ -2271,7 +2281,7 @@ static int synx_native_import_handle(struct synx_client *client,
 
 	rc = synx_util_init_handle(client, map_entry->synx_obj,
 		params->new_h_synx, map_entry,
-		(client->session.type != SYNX_CLIENT_GFX_CTX0));
+		(client->session.type != SYNX_CLIENT_GFX_CTX0), NULL);
 	if (rc != SYNX_SUCCESS) {
 		dprintk(SYNX_ERR,
 			"[sess :%llu] init of imported handle %u failed=%d\n",
@@ -2499,7 +2509,8 @@ retry:
 				rc = synx_util_init_handle(client,
 						map_entry->synx_obj,
 						params->new_h_synx, map_entry,
-						(client->session.type != SYNX_CLIENT_GFX_CTX0));
+						(client->session.type != SYNX_CLIENT_GFX_CTX0),
+						NULL);
 
 				#if defined(CONFIG_EXTENSIBLE_GLCOREDATA)
 				if (params_v2 && map_entry->synx_obj &&
@@ -2587,7 +2598,7 @@ retry:
 		#endif
 		rc = synx_util_init_handle(client, map_entry->synx_obj,
 			params->new_h_synx, map_entry,
-			(client->session.type != SYNX_CLIENT_GFX_CTX0));
+			(client->session.type != SYNX_CLIENT_GFX_CTX0), NULL);
 
 		dprintk(SYNX_DBG, "mapped fence %pK to existing handle %u\n",
 			params->fence, *params->new_h_synx);
