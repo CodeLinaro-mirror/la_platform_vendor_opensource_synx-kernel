@@ -167,7 +167,7 @@ static int synx_native_check_bind(struct synx_client *client,
 		return -SYNX_NOENT;
 
 	rc = synx_util_init_handle(client, entry->synx_obj,
-			&h_synx, entry);
+			&h_synx, entry, NULL);
 	if (rc != SYNX_SUCCESS) {
 		dprintk(SYNX_ERR,
 			"[sess :%llu] new handle init failed\n",
@@ -223,7 +223,7 @@ static int synx_native_create_core(struct synx_client *client,
 	}
 
 	rc = synx_util_init_handle(client, synx_obj,
-			params->h_synx, map_entry);
+			params->h_synx, map_entry, NULL);
 	if (rc < 0) {
 		dprintk(SYNX_ERR,
 			"[sess :%llu] unable to init new handle\n",
@@ -958,6 +958,7 @@ int synx_merge(struct synx_session *session,
 	struct dma_fence **fences = NULL;
 	struct synx_coredata *synx_obj;
 	struct synx_map_entry *map_entry;
+	struct synx_handle_coredata *synx_data_merged = NULL;
 
 	if (IS_ERR_OR_NULL(session) || IS_ERR_OR_NULL(params))
 		return -SYNX_INVALID;
@@ -1005,13 +1006,14 @@ int synx_merge(struct synx_session *session,
 	}
 
 	rc = synx_util_init_handle(client, synx_obj,
-			params->h_merged_obj, map_entry);
+			params->h_merged_obj, map_entry, &synx_data_merged);
 	if (rc) {
 		dprintk(SYNX_ERR,
 			"[sess :%llu] unable to init merge handle %u\n",
 			client->id, *params->h_merged_obj);
-		dma_fence_put(synx_obj->fence);
-		goto clear;
+		synx_util_release_map_entry(map_entry);
+		synx_put_client(client);
+		return rc;
 	}
 
 	if (params->flags & SYNX_MERGE_GLOBAL_FENCE) {
@@ -1043,11 +1045,18 @@ int synx_merge(struct synx_session *session,
 		"[sess :%llu] merge allocated %u, core %pK, fence %pK\n",
 		client->id, *params->h_merged_obj, synx_obj,
 		synx_obj->fence);
+	if (synx_data_merged)
+		synx_util_release_handle(synx_data_merged);
 	synx_put_client(client);
 	return SYNX_SUCCESS;
 
 clear:
-	synx_util_release_map_entry(map_entry);
+	synx_native_release_core(client, *params->h_merged_obj);
+	if (synx_data_merged)
+		synx_util_release_handle(synx_data_merged);
+	synx_put_client(client);
+	return rc;
+
 clean_up:
 	kfree(synx_obj);
 fail:
@@ -1473,7 +1482,7 @@ static int synx_native_import_handle(struct synx_client *client,
 	*params->new_h_synx = h_synx;
 
 	rc = synx_util_init_handle(client, map_entry->synx_obj,
-		params->new_h_synx, map_entry);
+		params->new_h_synx, map_entry, NULL);
 	if (rc != SYNX_SUCCESS) {
 		dprintk(SYNX_ERR,
 			"[sess :%llu] init of imported handle %u failed=%d\n",
@@ -1560,7 +1569,7 @@ retry:
 
 				rc = synx_util_init_handle(client,
 						map_entry->synx_obj,
-						params->new_h_synx, map_entry);
+						params->new_h_synx, map_entry, NULL);
 
 				dprintk(SYNX_DBG, "mapped fence %pK to handle %u\n",
 					params->fence, *params->new_h_synx);
@@ -1608,7 +1617,7 @@ retry:
 		}
 
 		rc = synx_util_init_handle(client, map_entry->synx_obj,
-			params->new_h_synx, map_entry);
+			params->new_h_synx, map_entry, NULL);
 
 		dprintk(SYNX_DBG, "mapped fence %pK to existing handle %u\n",
 			params->fence, *params->new_h_synx);
