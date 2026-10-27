@@ -1346,6 +1346,11 @@ int synx_global_mem_init(void)
 		sizeof(struct synx_global_coredata) : mem_info.custom_value;
 	dprintk(SYNX_DBG, "Global coredata size is %u\n", glcoredata_size);
 
+	if (glcoredata_size < sizeof(struct synx_global_coredata)) {
+		dprintk(SYNX_ERR, "Invalid global coredata size %u\n", glcoredata_size);
+		return -SYNX_INVALID;
+	}
+
 	gl_coredata = synx_fetch_global_coredata_object(SYNX_GLOBAL_MAX_OBJS);
 	if ((uintptr_t)gl_coredata > (uintptr_t)((uint8_t *)mem_info.virt_base + mem_info.size)) {
 		dprintk(SYNX_ERR, "Global coredata outside of shared mem limits");
